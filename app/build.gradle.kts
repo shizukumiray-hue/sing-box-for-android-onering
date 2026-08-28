@@ -78,23 +78,32 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = getProps("KEYSTORE_PASS")
-            keyAlias = getProps("ALIAS_NAME")
-            keyPassword = getProps("ALIAS_PASS")
+            // Only configure if keystore file exists
+            val keystoreFile = file("release.keystore")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = getProps("KEYSTORE_PASS")
+                keyAlias = getProps("ALIAS_NAME")
+                keyPassword = getProps("ALIAS_PASS")
+            }
         }
     }
 
     buildTypes {
         debug {
-            if (getProps("KEYSTORE_PASS").isNotEmpty()) {
+            val keystoreFile = file("release.keystore")
+            if (getProps("KEYSTORE_PASS").isNotEmpty() && keystoreFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            // Only use signing config if keystore exists
+            val keystoreFile = file("release.keystore")
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             vcsInfo.include = false
         }
     }
