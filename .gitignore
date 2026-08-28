@@ -16,8 +16,8 @@ local.properties
 /.claude/
 
 # Keystore files (sensitive)
-*.keystore
+# *.keystore - commented to allow release.keystore for CI/CD
 keystore_base64.txt
-release.keystore
+# release.keystore - now tracked for automated builds
 github_secrets.txt
 local_properties_base64.txt
