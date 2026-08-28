@@ -44,7 +44,7 @@ jobs:
           name: libbox-merged
           path: app/libs
           repo: shizukumiray-hue/sing-box-core-ref1nd
-          branch: reF1nd-stable
+          branch: ${{ github.event.inputs.libbox_run_id && '' || 'reF1nd-stable' }}
           run_id: ${{ github.event.inputs.libbox_run_id }}
           if_no_artifact_found: fail
       
