@@ -29,8 +29,8 @@ jobs:
           name: libbox-merged
           path: libbox-download
           repo: shizukumiray-hue/sing-box-core-ref1nd
+          branch: reF1nd-stable
           workflow_conclusion: success
-          search_artifacts: true
       
       # Step 3: Verify downloaded libbox.aar
       - name: Verify libbox.aar
