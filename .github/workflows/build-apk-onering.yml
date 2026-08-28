@@ -72,32 +72,43 @@ jobs:
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
       - name: Sign APKs (if keystore available)
-        if: secrets.KEYSTORE_FILE != ''
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
         run: |
-          # Decode keystore from base64
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > release.keystore
-          
-          # Sign each APK
-          for apk in app/build/outputs/apk/other/release/*.apk; do
-            echo "Signing: $apk"
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "Signing APKs with provided keystore..."
             
-            # Sign with jarsigner
-            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-              -keystore release.keystore \
-              -storepass "${{ secrets.KEYSTORE_PASS }}" \
-              -keypass "${{ secrets.ALIAS_PASS }}" \
-              "$apk" "${{ secrets.ALIAS_NAME }}"
+            # Decode keystore from base64
+            echo "$KEYSTORE_FILE" | base64 -d > release.keystore
             
-            # Verify signature
-            jarsigner -verify -verbose "$apk"
+            # Sign each APK
+            for apk in app/build/outputs/apk/other/release/*.apk; do
+              echo "Signing: $apk"
+              
+              # Sign with jarsigner
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+                -keystore release.keystore \
+                -storepass "$KEYSTORE_PASS" \
+                -keypass "$ALIAS_PASS" \
+                "$apk" "$ALIAS_NAME"
+              
+              # Verify signature
+              jarsigner -verify -verbose "$apk"
+              
+              # Zipalign
+              ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
+              mv "${apk%.apk}-aligned.apk" "$apk"
+            done
             
-            # Zipalign
-            ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
-            mv "${apk%.apk}-aligned.apk" "$apk"
-          done
-          
-          # Clean up keystore
-          rm -f release.keystore
+            # Clean up keystore
+            rm -f release.keystore
+            echo "✓ APKs signed successfully"
+          else
+            echo "No keystore provided, skipping signing (debug mode)"
+          fi
       
       - name: Rename APKs
         run: |
