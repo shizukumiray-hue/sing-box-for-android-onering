@@ -77,44 +77,9 @@ jobs:
           echo "Built APKs:"
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
-      - name: Sign APKs (if keystore available)
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
-          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
-          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
-        run: |
-          if [ -n "$KEYSTORE_FILE" ]; then
-            echo "Signing APKs with provided keystore..."
-            
-            # Decode keystore from base64
-            echo "$KEYSTORE_FILE" | base64 -d > release.keystore
-            
-            # Sign each APK
-            for apk in app/build/outputs/apk/other/release/*.apk; do
-              echo "Signing: $apk"
-              
-              # Sign with jarsigner
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-                -keystore release.keystore \
-                -storepass "$KEYSTORE_PASS" \
-                -keypass "$ALIAS_PASS" \
-                "$apk" "$ALIAS_NAME"
-              
-              # Verify signature
-              jarsigner -verify -verbose "$apk"
-              
-              # Zipalign
-              ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
-              mv "${apk%.apk}-aligned.apk" "$apk"
-            done
-            
-            # Clean up keystore
-            rm -f release.keystore
-            echo "✓ APKs signed successfully"
-          else
-            echo "No keystore provided, skipping signing (debug mode)"
-          fi
+      # NOTE: APKs are intentionally left UNSIGNED for local signing
+      # Use scripts/sign_apks_local.sh to sign APKs after downloading them
+      # This keeps keystore and signing credentials on your local machine only
       
       - name: Rename APKs
         run: |
@@ -127,12 +92,40 @@ jobs:
           done
           ls -lh
       
-      - name: Upload APK artifacts
+      # Upload each APK variant as separate artifact for individual download
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: sing-box-apk-onering
-          path: |
-            app/build/outputs/apk/other/release/*-onering.apk
+          name: arm64-v8a-onering
+          path: app/build/outputs/apk/other/release/*arm64-v8a*-onering.apk
+          retention-days: 30
+      
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: armeabi-v7a-onering
+          path: app/build/outputs/apk/other/release/*armeabi-v7a*-onering.apk
+          retention-days: 30
+      
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86_64-onering
+          path: app/build/outputs/apk/other/release/*x86_64*-onering.apk
+          retention-days: 30
+      
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: x86-onering
+          path: app/build/outputs/apk/other/release/*-x86-onering.apk
+          retention-days: 30
+      
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: universal-onering
+          path: app/build/outputs/apk/other/release/*universal*-onering.apk
           retention-days: 30
       
       - name: Create Release
@@ -165,7 +158,7 @@ jobs:
             
             In your outbound configuration, set TLS server_name with format:
             ```
-            real.domain.com|bug.domain.com
+            onering:real.domain.com:bug.domain.com
             ```
             
             Example VLESS + WebSocket:
@@ -177,7 +170,7 @@ jobs:
               "uuid": "your-uuid-here",
               "tls": {
                 "enabled": true,
-                "server_name": "real.cloudflare.com|bug.telkomsel.com"
+                "server_name": "onering:real.cloudflare.com:bug.telkomsel.com"
               },
               "transport": {
                 "type": "ws",
