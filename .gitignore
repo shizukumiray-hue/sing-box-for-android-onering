@@ -14,3 +14,8 @@ local.properties
 /service-account-credentials.json
 /CLAUDE.md
 /.claude/
+
+# Keystore files (sensitive)
+*.keystore
+keystore_base64.txt
+release.keystore
