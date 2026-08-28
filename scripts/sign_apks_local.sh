@@ -5,6 +5,8 @@
 # This script signs unsigned APKs downloaded from GitHub Actions locally,
 # keeping your keystore and signing credentials secure on your machine.
 #
+# Uses apksigner for v1+v2+v3 signature scheme support (required for Android 7.0+)
+#
 # USAGE:
 #   ./sign_apks_local.sh [OPTIONS]
 #
@@ -35,8 +37,7 @@
 #   ./sign_apks_local.sh
 #
 # PREREQUISITES:
-#   - Java JDK installed (jarsigner command)
-#   - Android SDK build-tools (for zipalign)
+#   - Android SDK build-tools (apksigner command)
 #   - Valid Android keystore file
 #
 # OUTPUT:
@@ -126,23 +127,11 @@ if [[ -z "$KEY_PASS" ]]; then
 fi
 
 # Check for required tools
-if ! command -v jarsigner &> /dev/null; then
-  echo -e "${RED}Error: jarsigner not found. Please install Java JDK.${NC}"
+if ! command -v apksigner &> /dev/null; then
+  echo -e "${RED}Error: apksigner not found. Please install Android SDK build-tools.${NC}"
+  echo "Add Android SDK build-tools to PATH, e.g.:"
+  echo "  export PATH=\$PATH:\$ANDROID_HOME/build-tools/34.0.0"
   exit 1
-fi
-
-# Find zipalign
-ZIPALIGN=""
-if command -v zipalign &> /dev/null; then
-  ZIPALIGN="zipalign"
-elif [[ -n "$ANDROID_HOME" ]]; then
-  # Try to find zipalign in Android SDK
-  ZIPALIGN=$(find "$ANDROID_HOME/build-tools" -name zipalign 2>/dev/null | sort -V | tail -n 1)
-fi
-
-if [[ -z "$ZIPALIGN" ]]; then
-  echo -e "${YELLOW}Warning: zipalign not found. APKs will be signed but not aligned.${NC}"
-  echo "Set ANDROID_HOME or add zipalign to PATH for optimal APKs."
 fi
 
 # Find APKs to sign
@@ -168,44 +157,35 @@ for apk in "${APKS[@]}"; do
   # Remove existing signed version if present
   [[ -f "$signed_apk" ]] && rm -f "$signed_apk"
   
-  # Copy unsigned APK to signed name
-  cp "$apk" "$signed_apk"
-  
-  # Sign the APK
-  # Use environment variable method to avoid password exposure in process list
-  echo "  Signing..."
-  export STOREPASS="$KEYSTORE_PASS"
-  export KEYPASS="$KEY_PASS"
-  jarsigner -verbose \
-    -sigalg SHA256withRSA \
-    -digestalg SHA-256 \
-    -keystore "$KEYSTORE_PATH" \
-    -storepass:env STOREPASS \
-    -keypass:env KEYPASS \
-    "$signed_apk" "$KEY_ALIAS" 2>&1 | grep -E "(signing|adding)" || true
-  unset STOREPASS KEYPASS
-  
-  # Verify signature
-  echo "  Verifying signature..."
-  if jarsigner -verify -verbose "$signed_apk" 2>&1 | grep -q "jar verified"; then
-    echo -e "  ${GREEN}✓ Signature verified${NC}"
+  # Sign the APK with apksigner (v1+v2+v3 signature schemes)
+  # apksigner automatically aligns the APK before signing
+  echo "  Signing with v1+v2+v3 signature schemes..."
+  if apksigner sign \
+    --ks "$KEYSTORE_PATH" \
+    --ks-pass "pass:$KEYSTORE_PASS" \
+    --ks-key-alias "$KEY_ALIAS" \
+    --key-pass "pass:$KEY_PASS" \
+    --out "$signed_apk" \
+    "$apk" 2>&1; then
+    echo -e "  ${GREEN}✓ Signed successfully${NC}"
   else
-    echo -e "  ${RED}✗ Signature verification failed${NC}"
+    echo -e "  ${RED}✗ Signing failed${NC}"
     rm -f "$signed_apk"
     continue
   fi
   
-  # Zipalign if available
-  if [[ -n "$ZIPALIGN" ]]; then
-    echo "  Aligning..."
-    temp_apk="${signed_apk}.temp"
-    if "$ZIPALIGN" -f 4 "$signed_apk" "$temp_apk" 2>&1; then
-      mv "$temp_apk" "$signed_apk"
-      echo -e "  ${GREEN}✓ Aligned${NC}"
-    else
-      echo -e "  ${YELLOW}⚠ Alignment failed, keeping unaligned version${NC}"
-      rm -f "$temp_apk"
-    fi
+  # Verify signature
+  echo "  Verifying signature..."
+  if apksigner verify "$signed_apk" &> /dev/null; then
+    echo -e "  ${GREEN}✓ Signature verified${NC}"
+    
+    # Show signature schemes used
+    echo "  Signature schemes:"
+    apksigner verify --verbose "$signed_apk" 2>&1 | grep "Verified using" | sed 's/^/    /'
+  else
+    echo -e "  ${RED}✗ Signature verification failed${NC}"
+    rm -f "$signed_apk"
+    continue
   fi
   
   # Show file size
