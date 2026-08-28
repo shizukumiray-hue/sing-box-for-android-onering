@@ -40,10 +40,9 @@ jobs:
           echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.0.13004108" >> $GITHUB_ENV
       
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
-          gradle-home-cache-cleanup: true
       
       - name: Verify libbox.aar (prebuilt)
         run: |
@@ -66,6 +65,9 @@ jobs:
       
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      
+      - name: Clean Gradle build
+        run: ./gradlew clean --no-daemon
       
       - name: Build APK (Other variant - Release)
         run: ./gradlew assembleOtherRelease --stacktrace --no-daemon
