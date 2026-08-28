@@ -72,7 +72,7 @@ jobs:
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
       - name: Sign APKs (if keystore available)
-        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        if: secrets.KEYSTORE_FILE != ''
         run: |
           # Decode keystore from base64
           echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > release.keystore
