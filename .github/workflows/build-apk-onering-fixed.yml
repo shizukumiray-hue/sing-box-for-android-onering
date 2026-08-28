@@ -1,0 +1,275 @@
+name: Build APK with OneRing (Fixed)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ reF1nd-stable ]
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'version.properties'
+      - '.github/workflows/build-apk-onering.yml'
+
+jobs:
+  build-apk-with-onering:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout Android repo
+      - name: Checkout Android repo
+        uses: actions/checkout@v4
+        with:
+          path: android-repo
+          fetch-depth: 0
+      
+      # Step 2: Checkout sing-box core (OneRing)
+      - name: Checkout sing-box core (OneRing)
+        uses: actions/checkout@v4
+        with:
+          repository: shizukumiray-hue/sing-box-core-ref1nd
+          ref: reF1nd-stable
+          path: sing-box-core
+          fetch-depth: 1
+      
+      # Step 3: Setup Go
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22.10'
+          cache: false
+      
+      # Step 4: Setup Android NDK for gomobile
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+          add-to-path: true
+      
+      # Step 5: Install gomobile
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          go install golang.org/x/mobile/cmd/gobind@latest
+          gomobile init
+      
+      # Step 6: Build libbox.aar (all architectures)
+      - name: Build libbox.aar (all architectures)
+        working-directory: sing-box-core
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          
+          echo "Building libbox.aar with OneRing support..."
+          gomobile bind -v \
+            -androidapi 21 \
+            -target=android/arm64,android/arm,android/amd64,android/386 \
+            -o libbox.aar \
+            github.com/sagernet/sing-box/experimental/libbox
+          
+          echo ""
+          echo "=== Build Complete ==="
+          ls -lh libbox.aar
+      
+      # Step 7: Verify libbox.aar
+      - name: Verify libbox.aar contents
+        working-directory: sing-box-core
+        run: |
+          echo "=== AAR File Structure ==="
+          unzip -l libbox.aar
+          
+          echo ""
+          echo "=== Native Libraries ==="
+          unzip -l libbox.aar | grep -E "\.so$"
+          
+          echo ""
+          echo "=== Extract and verify classes.jar ==="
+          unzip -q libbox.aar classes.jar
+          
+          echo "Top-level classes:"
+          jar tf classes.jar | grep -E "^libbox/[A-Z].*\.class$" | sed 's/\.class$//' | sed 's/\$.*$//' | sort -u | head -30
+          
+          echo ""
+          echo "=== Verify Critical Classes ==="
+          jar tf classes.jar | grep -E "(Libbox\.class|OutboundGroup\.class|StatusMessage\.class|LogEntry\.class|LogIterator\.class)" && echo "✓ All critical classes found" || echo "❌ WARNING: Some classes missing!"
+      
+      # Step 8: Copy libbox.aar to Android project
+      - name: Copy libbox.aar to Android project
+        run: |
+          mkdir -p android-repo/app/libs
+          cp sing-box-core/libbox.aar android-repo/app/libs/
+          echo "✓ libbox.aar copied to android-repo/app/libs/"
+          ls -lh android-repo/app/libs/libbox.aar
+      
+      # Step 9: Setup Java
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      # Step 10: Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      # Step 11: Setup NDK for Android build
+      - name: Setup NDK for Android build
+        run: |
+          echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.0.13004108" >> $GITHUB_ENV
+      
+      # Step 12: Setup Gradle
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
+      
+      # Step 13: Grant execute permission
+      - name: Grant execute permission for gradlew
+        working-directory: android-repo
+        run: chmod +x gradlew
+      
+      # Step 14: Verify libbox.aar before build
+      - name: Final verification before build
+        working-directory: android-repo
+        run: |
+          echo "=== Verifying app/libs/libbox.aar before Gradle build ==="
+          ls -lh app/libs/libbox.aar
+          unzip -l app/libs/libbox.aar | grep classes.jar
+          echo "✓ libbox.aar is ready for Gradle"
+      
+      # Step 15: Build APK
+      - name: Build APK (Other variant - Release)
+        working-directory: android-repo
+        run: ./gradlew assembleOtherRelease --stacktrace --no-daemon
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+      
+      # Step 16: List built APKs
+      - name: List built APKs
+        working-directory: android-repo
+        run: |
+          echo "Built APKs:"
+          find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
+      
+      # Step 17: Sign APKs (if keystore available)
+      - name: Sign APKs (if keystore available)
+        working-directory: android-repo
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+        run: |
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "Signing APKs with provided keystore..."
+            
+            # Decode keystore from base64
+            echo "$KEYSTORE_FILE" | base64 -d > release.keystore
+            
+            # Sign each APK
+            for apk in app/build/outputs/apk/other/release/*.apk; do
+              echo "Signing: $apk"
+              
+              # Sign with jarsigner
+              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+                -keystore release.keystore \
+                -storepass "$KEYSTORE_PASS" \
+                -keypass "$ALIAS_PASS" \
+                "$apk" "$ALIAS_NAME"
+              
+              # Verify signature
+              jarsigner -verify -verbose "$apk"
+              
+              # Zipalign
+              ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
+              mv "${apk%.apk}-aligned.apk" "$apk"
+            done
+            
+            # Clean up keystore
+            rm -f release.keystore
+            echo "✓ APKs signed successfully"
+          else
+            echo "No keystore provided, skipping signing (debug mode)"
+          fi
+      
+      # Step 18: Rename APKs
+      - name: Rename APKs
+        working-directory: android-repo
+        run: |
+          cd app/build/outputs/apk/other/release
+          for apk in *.apk; do
+            # Add "onering" suffix to filename
+            newname=$(echo "$apk" | sed 's/\.apk$/-onering.apk/')
+            mv "$apk" "$newname"
+            echo "Renamed: $apk -> $newname"
+          done
+          ls -lh
+      
+      # Step 19: Upload APK artifacts
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-apk-onering
+          path: |
+            android-repo/app/build/outputs/apk/other/release/*-onering.apk
+          retention-days: 30
+      
+      # Step 20: Upload libbox.aar for reference
+      - name: Upload libbox.aar artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libbox-aar-used
+          path: android-repo/app/libs/libbox.aar
+          retention-days: 7
+      
+      # Step 21: Create Release (if tagged)
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android-repo/app/build/outputs/apk/other/release/*-onering.apk
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## sing-box Android APK with OneRing Support
+            
+            Built from commit: ${{ github.sha }}
+            
+            ### Features
+            - ✅ OneRing bypass technique implementation
+            - ✅ VLESS + WebSocket/HTTPUpgrade
+            - ✅ VMess + WebSocket/HTTPUpgrade
+            - ✅ Trojan + HTTPUpgrade
+            - ✅ Shadowsocks (v2ray-plugin)
+            - ✅ All critical bugs fixed (5 fixes applied)
+            
+            ### APK Variants
+            - `arm64-v8a-onering.apk` - Modern 64-bit ARM devices (recommended)
+            - `armeabi-v7a-onering.apk` - 32-bit ARM devices
+            - `x86_64-onering.apk` - 64-bit x86 emulators/tablets
+            - `x86-onering.apk` - 32-bit x86 devices
+            - `universal-onering.apk` - All architectures (larger file)
+            
+            ### How to Use OneRing
+            
+            In your outbound configuration, set TLS server_name with format:
+            ```
+            real.domain.com|bug.domain.com
+            ```
+            
+            Example VLESS + WebSocket:
+            ```json
+            {
+              "type": "vless",
+              "server": "1.2.3.4",
+              "server_port": 443,
+              "uuid": "your-uuid-here",
+              "tls": {
+                "enabled": true,
+                "server_name": "real.cloudflare.com|bug.telkomsel.com"
+              },
+              "transport": {
+                "type": "ws",
+                "path": "/websocket"
+              }
+            }
+            ```

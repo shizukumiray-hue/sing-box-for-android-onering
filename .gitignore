@@ -19,3 +19,5 @@ local.properties
 *.keystore
 keystore_base64.txt
 release.keystore
+github_secrets.txt
+local_properties_base64.txt
