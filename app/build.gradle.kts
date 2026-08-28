@@ -78,11 +78,12 @@ android {
 
     signingConfigs {
         create("release") {
-            // Only configure if keystore file exists
+            // Only configure if keystore file exists AND password is provided
             val keystoreFile = file("release.keystore")
-            if (keystoreFile.exists()) {
+            val keystorePass = getProps("KEYSTORE_PASS")
+            if (keystoreFile.exists() && keystorePass.isNotEmpty()) {
                 storeFile = keystoreFile
-                storePassword = getProps("KEYSTORE_PASS")
+                storePassword = keystorePass
                 keyAlias = getProps("ALIAS_NAME")
                 keyPassword = getProps("ALIAS_PASS")
             }
@@ -91,19 +92,18 @@ android {
 
     buildTypes {
         debug {
-            val keystoreFile = file("release.keystore")
-            if (getProps("KEYSTORE_PASS").isNotEmpty() && keystoreFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // Debug builds don't need signing config
         }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Only use signing config if keystore exists
+            // Only use signing config if keystore exists AND password is provided
             val keystoreFile = file("release.keystore")
-            if (keystoreFile.exists()) {
+            val keystorePass = getProps("KEYSTORE_PASS")
+            if (keystoreFile.exists() && keystorePass.isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // If no signing config, APK will be unsigned (can be signed manually later)
             vcsInfo.include = false
         }
     }
