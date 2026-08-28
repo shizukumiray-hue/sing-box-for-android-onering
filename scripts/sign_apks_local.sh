@@ -47,6 +47,9 @@
 
 set -e
 
+# Trap SIGINT for graceful abort
+trap 'echo -e "\n${RED}Aborted by user${NC}"; exit 130' INT
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -160,19 +163,29 @@ for apk in "${APKS[@]}"; do
   # Sign the APK with apksigner (v1+v2+v3 signature schemes)
   # apksigner automatically aligns the APK before signing
   echo "  Signing with v1+v2+v3 signature schemes..."
+  
+  # Use env: format to prevent password exposure in process list
+  export APKSIGNER_KS_PASS="$KEYSTORE_PASS"
+  export APKSIGNER_KEY_PASS="$KEY_PASS"
+  
   if apksigner sign \
     --ks "$KEYSTORE_PATH" \
-    --ks-pass "pass:$KEYSTORE_PASS" \
+    --ks-pass "env:APKSIGNER_KS_PASS" \
     --ks-key-alias "$KEY_ALIAS" \
-    --key-pass "pass:$KEY_PASS" \
+    --key-pass "env:APKSIGNER_KEY_PASS" \
     --out "$signed_apk" \
-    "$apk" 2>&1; then
+    "$apk" 2>/dev/null; then
     echo -e "  ${GREEN}✓ Signed successfully${NC}"
   else
     echo -e "  ${RED}✗ Signing failed${NC}"
     rm -f "$signed_apk"
+    # Clean up sensitive environment variables
+    unset APKSIGNER_KS_PASS APKSIGNER_KEY_PASS
     continue
   fi
+  
+  # Clean up sensitive environment variables
+  unset APKSIGNER_KS_PASS APKSIGNER_KEY_PASS
   
   # Verify signature
   echo "  Verifying signature..."
