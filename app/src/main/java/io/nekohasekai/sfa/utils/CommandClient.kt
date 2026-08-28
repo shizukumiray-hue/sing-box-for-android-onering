@@ -91,11 +91,11 @@ open class CommandClient(
     private val access = Any()
     private var connectionEpoch = 0
     private var connecting = false
-    private var commandClient: io.nekohasekai.libbox.CommandClient? = null
+    private var commandClient: libbox.CommandClient? = null
 
     fun connect() {
         val epoch: Int
-        val previousClient: io.nekohasekai.libbox.CommandClient?
+        val previousClient: libbox.CommandClient?
         synchronized(access) {
             epoch = ++connectionEpoch
             previousClient = commandClient
@@ -122,7 +122,7 @@ open class CommandClient(
             options.addCommand(command)
         }
         options.statusInterval = 1 * 1000 * 1000 * 1000
-        val commandClient = io.nekohasekai.libbox.CommandClient(ClientHandler(epoch), options)
+        val commandClient = libbox.CommandClient(ClientHandler(epoch), options)
         try {
             commandClient.connect()
         } catch (e: Exception) {
@@ -153,7 +153,7 @@ open class CommandClient(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun disconnect() {
-        val client: io.nekohasekai.libbox.CommandClient?
+        val client: libbox.CommandClient?
         val notifyDisconnected: Boolean
         synchronized(access) {
             connectionEpoch++
