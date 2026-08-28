@@ -330,8 +330,8 @@ dependencies {
     implementation("org.kodein.emoji:emoji-kt:2.3.0")
 
     // Xposed API for self-hooking VPN hide module
-    compileOnly("de.robv.android.xposed:api:82")
-    compileOnly(project(":libxposed-api"))
+    // compileOnly("de.robv.android.xposed:api:82")  // Disabled: JitPack timeout issue
+    compileOnly(project(":libxposed-api"))  // Use local libxposed-api instead
 }
 
 val playCredentialsJSON = rootProject.file("service-account-credentials.json")
