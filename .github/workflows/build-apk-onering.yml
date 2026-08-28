@@ -36,8 +36,11 @@ jobs:
       
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v3
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
       
-      - name: Download libbox.aar from artifact
+      - name: Download libbox.aar from artifact (specific run)
         if: github.event.inputs.libbox_run_id != ''
         uses: dawidd6/action-download-artifact@v3
         with:
@@ -46,9 +49,10 @@ jobs:
           path: app/libs
           repo: shizukumiray-hue/sing-box-core-ref1nd
           run_id: ${{ github.event.inputs.libbox_run_id }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           if_no_artifact_found: fail
       
-      - name: Download libbox.aar from artifact
+      - name: Download libbox.aar from artifact (latest)
         if: github.event.inputs.libbox_run_id == ''
         uses: dawidd6/action-download-artifact@v3
         with:
@@ -57,12 +61,22 @@ jobs:
           path: app/libs
           repo: shizukumiray-hue/sing-box-core-ref1nd
           branch: reF1nd-stable
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           if_no_artifact_found: fail
       
       - name: Verify libbox.aar
         run: |
+          echo "Checking libbox.aar..."
           ls -lh app/libs/libbox.aar
+          
+          echo "Checking native libraries..."
           unzip -l app/libs/libbox.aar | grep -E "(arm|x86|classes\.jar)"
+          
+          echo "Verifying classes.jar contains Libbox classes..."
+          unzip -q app/libs/libbox.aar classes.jar
+          unzip -l classes.jar | grep -i "libbox/Libbox.class" || (echo "ERROR: Libbox.class not found!" && exit 1)
+          
+          echo "✓ libbox.aar verification complete"
       
       - name: Create legacy libbox.aar (copy)
         run: |
