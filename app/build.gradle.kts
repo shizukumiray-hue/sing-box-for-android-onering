@@ -183,7 +183,7 @@ dependencies {
     // libbox
     "playImplementation"(files("libs/libbox.aar"))
     "otherImplementation"(files("libs/libbox.aar"))
-    "otherLegacyImplementation"(files("libs/libbox-legacy.aar"))
+    "otherLegacyImplementation"(files("libs/libbox.aar"))
 
     // API level specific versions
     val lifecycleVersion23 = "2.10.0"
