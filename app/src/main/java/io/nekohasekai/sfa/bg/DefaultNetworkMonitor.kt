@@ -4,7 +4,7 @@ import android.net.LinkProperties
 import android.net.Network
 import android.os.Build
 import android.util.Log
-import io.nekohasekai.libbox.InterfaceUpdateListener
+import libbox.InterfaceUpdateListener
 import io.nekohasekai.sfa.Application
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

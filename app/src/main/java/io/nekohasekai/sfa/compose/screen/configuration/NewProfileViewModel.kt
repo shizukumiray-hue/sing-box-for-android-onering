@@ -4,7 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.nekohasekai.libbox.Libbox
+import libbox.Libbox
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.database.Profile
@@ -28,6 +28,7 @@ data class NewProfileUiState(
     val profileSource: ProfileSource = ProfileSource.CreateNew,
     // Remote profile fields
     val remoteUrl: String = "",
+    val authToken: String = "",
     val autoUpdate: Boolean = true,
     val autoUpdateInterval: Int = 60,
     // File import
@@ -112,6 +113,12 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
                 remoteUrl = url,
                 remoteUrlError = if (url.isNotBlank()) null else it.remoteUrlError,
             )
+        }
+    }
+
+    fun updateAuthToken(token: String) {
+        _uiState.update {
+            it.copy(authToken = token)
         }
     }
 
@@ -284,6 +291,7 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
             TypedProfile().apply {
                 type = TypedProfile.Type.Remote
                 remoteURL = state.remoteUrl
+                authToken = state.authToken
                 autoUpdate = state.autoUpdate
                 autoUpdateInterval = state.autoUpdateInterval
                 lastUpdated = Date()
@@ -299,8 +307,8 @@ class NewProfileViewModel(application: Application) : AndroidViewModel(applicati
         val configFile = File(configDirectory, "$fileID.json")
         typedProfile.path = configFile.path
 
-        // Fetch initial config - this MUST succeed for remote profiles
-        val content = HTTPClient().use { it.getString(state.remoteUrl) }
+        // Fetch initial config with auth token - this MUST succeed for remote profiles
+        val content = HTTPClient().use { it.getString(state.remoteUrl, state.authToken) }
         Libbox.checkConfig(content)
         val configContent = content
 

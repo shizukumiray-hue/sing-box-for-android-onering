@@ -11,8 +11,8 @@ import android.net.wifi.WifiManager
 import android.os.PowerManager
 import androidx.core.content.getSystemService
 import go.Seq
-import io.nekohasekai.libbox.Libbox
-import io.nekohasekai.libbox.SetupOptions
+import libbox.Libbox
+import libbox.SetupOptions
 import io.nekohasekai.sfa.bg.AppChangeReceiver
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.constant.Bugs

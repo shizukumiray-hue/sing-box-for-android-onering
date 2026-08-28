@@ -6,7 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import io.nekohasekai.libbox.Libbox
+import libbox.Libbox
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.UpdateProfileWork
 import io.nekohasekai.sfa.database.Profile
@@ -32,6 +32,7 @@ data class EditProfileUiState(
     val icon: String? = null,
     val profileType: TypedProfile.Type? = null,
     val remoteUrl: String = "",
+    val authToken: String = "",
     val autoUpdate: Boolean = false,
     val autoUpdateInterval: Int = 60,
     val lastUpdated: Date? = null,
@@ -39,6 +40,7 @@ data class EditProfileUiState(
     val originalName: String = "",
     val originalIcon: String? = null,
     val originalRemoteUrl: String = "",
+    val originalAuthToken: String = "",
     val originalAutoUpdate: Boolean = false,
     val originalAutoUpdateInterval: Int = 60,
     // State flags
@@ -85,6 +87,8 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         profileType = typedProfile.type,
                         remoteUrl = typedProfile.remoteURL,
                         originalRemoteUrl = typedProfile.remoteURL,
+                        authToken = typedProfile.authToken,
+                        originalAuthToken = typedProfile.authToken,
                         autoUpdate = typedProfile.autoUpdate,
                         originalAutoUpdate = typedProfile.autoUpdate,
                         autoUpdateInterval = typedProfile.autoUpdateInterval,
@@ -148,6 +152,18 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun updateAuthToken(token: String) {
+        _uiState.update { state ->
+            state.copy(
+                authToken = token,
+                hasChanges =
+                checkHasChanges(
+                    state.copy(authToken = token),
+                ),
+            )
+        }
+    }
+
     fun updateAutoUpdate(enabled: Boolean) {
         _uiState.update { state ->
             state.copy(
@@ -186,6 +202,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
     private fun checkHasChanges(state: EditProfileUiState): Boolean = state.name != state.originalName ||
         state.icon != state.originalIcon ||
         state.remoteUrl != state.originalRemoteUrl ||
+        state.authToken != state.originalAuthToken ||
         state.autoUpdate != state.originalAutoUpdate ||
         state.autoUpdateInterval != state.originalAutoUpdateInterval
 
@@ -205,6 +222,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                 profile.name = state.name
                 profile.icon = state.icon
                 profile.typed.remoteURL = state.remoteUrl
+                profile.typed.authToken = state.authToken
 
                 // Handle auto-update changes
                 val autoUpdateChanged = state.autoUpdate != state.originalAutoUpdate
@@ -225,6 +243,7 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
                         originalName = state.name,
                         originalIcon = state.icon,
                         originalRemoteUrl = state.remoteUrl,
+                        originalAuthToken = state.authToken,
                         originalAutoUpdate = state.autoUpdate,
                         originalAutoUpdateInterval = state.autoUpdateInterval,
                         hasChanges = false,
@@ -254,8 +273,10 @@ class EditProfileViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 var selectedProfileUpdated = false
 
-                // Fetch remote config
-                val content = HTTPClient().use { it.getString(profile.typed.remoteURL) }
+                // Fetch remote config with auth token
+                val content = HTTPClient().use { 
+                    it.getString(profile.typed.remoteURL, profile.typed.authToken)
+                }
                 Libbox.checkConfig(content)
 
                 // Check if content changed

@@ -1,7 +1,7 @@
 package io.nekohasekai.sfa.vendor
 
-import io.nekohasekai.libbox.HTTPResponseWriteToProgressHandler
-import io.nekohasekai.libbox.Libbox
+import libbox.HTTPResponseWriteToProgressHandler
+import libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.update.UpdateState
 import io.nekohasekai.sfa.utils.HTTPClient

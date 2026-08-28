@@ -8,7 +8,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequest
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import io.nekohasekai.libbox.Libbox
+import libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.database.ProfileManager
 import io.nekohasekai.sfa.database.Settings
@@ -75,7 +75,9 @@ class UpdateProfileWork {
                     continue
                 }
                 try {
-                    val content = HTTPClient().use { it.getString(profile.typed.remoteURL) }
+                    val content = HTTPClient().use { 
+                        it.getString(profile.typed.remoteURL, profile.typed.authToken)
+                    }
                     Libbox.checkConfig(content)
                     val file = File(profile.typed.path)
                     if (file.readText() != content) {

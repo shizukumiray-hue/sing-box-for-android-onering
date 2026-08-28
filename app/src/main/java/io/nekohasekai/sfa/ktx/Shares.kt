@@ -3,7 +3,7 @@ package io.nekohasekai.sfa.ktx
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
-import io.nekohasekai.libbox.ProfileContent
+import libbox.ProfileContent
 import io.nekohasekai.sfa.database.Profile
 import io.nekohasekai.sfa.database.TypedProfile
 import kotlinx.coroutines.Dispatchers

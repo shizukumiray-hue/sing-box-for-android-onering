@@ -1,6 +1,6 @@
 package io.nekohasekai.sfa.utils
 
-import io.nekohasekai.libbox.Libbox
+import libbox.Libbox
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.ktx.unwrap
 import java.io.Closeable
@@ -28,10 +28,16 @@ class HTTPClient : Closeable {
         client.modernTLS()
     }
 
-    fun getString(url: String): String {
+    fun getString(url: String, authToken: String? = null): String {
         val request = client.newRequest()
         request.setUserAgent(userAgent)
         request.setURL(url)
+        
+        // Add Authorization header if token is provided
+        if (!authToken.isNullOrBlank()) {
+            request.setHeader("Authorization", "Bearer $authToken")
+        }
+        
         val response = request.execute()
         return response.content.unwrap
     }
