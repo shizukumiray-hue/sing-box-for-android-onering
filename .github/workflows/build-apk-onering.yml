@@ -1,0 +1,197 @@
+name: Build APK with OneRing
+
+on:
+  workflow_dispatch:
+    inputs:
+      libbox_run_id:
+        description: 'libbox workflow run ID (leave empty to download from latest artifact)'
+        required: false
+        default: ''
+  push:
+    branches: [ reF1nd-stable ]
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'version.properties'
+      - '.github/workflows/build-apk-onering.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Android repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+      
+      - name: Download libbox.aar from artifact
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build-libbox-onering.yml
+          name: libbox-merged
+          path: app/libs
+          repo: shizukumiray-hue/sing-box-core-ref1nd
+          branch: reF1nd-stable
+          run_id: ${{ github.event.inputs.libbox_run_id }}
+          if_no_artifact_found: fail
+      
+      - name: Verify libbox.aar
+        run: |
+          ls -lh app/libs/libbox.aar
+          unzip -l app/libs/libbox.aar | grep -E "(arm|x86|classes\.jar)"
+      
+      - name: Create legacy libbox.aar (copy)
+        run: |
+          cp app/libs/libbox.aar app/libs/libbox-legacy.aar
+          ls -lh app/libs/
+      
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      
+      - name: Build APK (Other variant - Release)
+        run: ./gradlew assembleOtherRelease --stacktrace --no-daemon
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+      
+      - name: List built APKs
+        run: |
+          echo "Built APKs:"
+          find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
+      
+      - name: Sign APKs (if keystore available)
+        if: ${{ secrets.KEYSTORE_FILE != '' }}
+        run: |
+          # Decode keystore from base64
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > release.keystore
+          
+          # Sign each APK
+          for apk in app/build/outputs/apk/other/release/*.apk; do
+            echo "Signing: $apk"
+            
+            # Sign with jarsigner
+            jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
+              -keystore release.keystore \
+              -storepass "${{ secrets.KEYSTORE_PASS }}" \
+              -keypass "${{ secrets.ALIAS_PASS }}" \
+              "$apk" "${{ secrets.ALIAS_NAME }}"
+            
+            # Verify signature
+            jarsigner -verify -verbose "$apk"
+            
+            # Zipalign
+            ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
+            mv "${apk%.apk}-aligned.apk" "$apk"
+          done
+          
+          # Clean up keystore
+          rm -f release.keystore
+      
+      - name: Rename APKs
+        run: |
+          cd app/build/outputs/apk/other/release
+          for apk in *.apk; do
+            # Add "onering" suffix to filename
+            newname=$(echo "$apk" | sed 's/\.apk$/-onering.apk/')
+            mv "$apk" "$newname"
+            echo "Renamed: $apk -> $newname"
+          done
+          ls -lh
+      
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-apk-onering
+          path: |
+            app/build/outputs/apk/other/release/*-onering.apk
+          retention-days: 30
+      
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/other/release/*-onering.apk
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## sing-box Android APK with OneRing Support
+            
+            Built from commit: ${{ github.sha }}
+            
+            ### Features
+            - ✅ OneRing bypass technique implementation
+            - ✅ VLESS + WebSocket/HTTPUpgrade
+            - ✅ VMess + WebSocket/HTTPUpgrade
+            - ✅ Trojan + HTTPUpgrade
+            - ✅ Shadowsocks (v2ray-plugin)
+            - ✅ All critical bugs fixed (5 fixes applied)
+            
+            ### APK Variants
+            - `arm64-v8a-onering.apk` - Modern 64-bit ARM devices (recommended)
+            - `armeabi-v7a-onering.apk` - 32-bit ARM devices
+            - `x86_64-onering.apk` - 64-bit x86 emulators/tablets
+            - `x86-onering.apk` - 32-bit x86 devices
+            - `universal-onering.apk` - All architectures (larger file ~40MB)
+            
+            ### How to Use OneRing
+            
+            In your outbound configuration, set TLS server_name with format:
+            ```
+            real.domain.com|bug.domain.com
+            ```
+            
+            Example VLESS + WebSocket:
+            ```json
+            {
+              "type": "vless",
+              "server": "1.2.3.4",
+              "server_port": 443,
+              "uuid": "your-uuid-here",
+              "tls": {
+                "enabled": true,
+                "server_name": "real.cloudflare.com|bug.telkomsel.com"
+              },
+              "transport": {
+                "type": "ws",
+                "path": "/websocket"
+              }
+            }
+            ```
+            
+            ### What is OneRing?
+            
+            OneRing is a bypass technique that:
+            - Dials to bug domain (e.g., telkomsel.com) to avoid ISP throttling
+            - Sets TLS SNI to bug domain
+            - Sets HTTP Host header to real domain (e.g., cloudflare.com)
+            - CDN routes request to correct destination based on Host header
+            
+            Result: ISP sees connection to "bug domain" (not throttled), while server receives correct request.
+            
+            ### Installation
+            
+            1. Download appropriate APK for your device architecture
+            2. Enable "Install from unknown sources" in Android settings
+            3. Install APK
+            4. Configure with OneRing format in server_name
+            5. Connect and enjoy!
+            
+            ### Changelog
+            
+            - Implemented OneRing parser (90.3% test coverage)
+            - Fixed HTTP response body leak (CRITICAL)
+            - Fixed channel leak in Close() (CRITICAL)
+            - Fixed nil pointer dereference (CRITICAL)
+            - Fixed double close panic (HIGH)
+            - Fixed type mismatch in ReadResponse (HIGH)
