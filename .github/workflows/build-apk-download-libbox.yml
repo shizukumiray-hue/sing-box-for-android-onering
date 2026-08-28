@@ -119,50 +119,10 @@ jobs:
       # Step 12: List built APKs
       - name: List built APKs
         run: |
-          echo "Built APKs:"
+          echo "Built APKs (unsigned - sign manually later):"
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
-      # Step 13: Sign APKs (if keystore available)
-      - name: Sign APKs (if keystore available)
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
-          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
-          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
-        run: |
-          if [ -n "$KEYSTORE_FILE" ]; then
-            echo "Signing APKs with provided keystore..."
-            
-            # Decode keystore from base64
-            echo "$KEYSTORE_FILE" | base64 -d > release.keystore
-            
-            # Sign each APK
-            for apk in app/build/outputs/apk/other/release/*.apk; do
-              echo "Signing: $apk"
-              
-              # Sign with jarsigner
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-                -keystore release.keystore \
-                -storepass "$KEYSTORE_PASS" \
-                -keypass "$ALIAS_PASS" \
-                "$apk" "$ALIAS_NAME"
-              
-              # Verify signature
-              jarsigner -verify -verbose "$apk"
-              
-              # Zipalign
-              ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
-              mv "${apk%.apk}-aligned.apk" "$apk"
-            done
-            
-            # Clean up keystore
-            rm -f release.keystore
-            echo "✓ APKs signed successfully"
-          else
-            echo "No keystore provided, skipping signing (debug mode)"
-          fi
-      
-      # Step 14: Rename APKs
+      # Step 13: Rename APKs
       - name: Rename APKs
         run: |
           cd app/build/outputs/apk/other/release
