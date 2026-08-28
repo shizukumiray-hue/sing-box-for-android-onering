@@ -38,14 +38,25 @@ jobs:
         uses: gradle/gradle-build-action@v3
       
       - name: Download libbox.aar from artifact
+        if: github.event.inputs.libbox_run_id != ''
         uses: dawidd6/action-download-artifact@v3
         with:
           workflow: build-libbox-onering.yml
           name: libbox-merged
           path: app/libs
           repo: shizukumiray-hue/sing-box-core-ref1nd
-          branch: ${{ github.event.inputs.libbox_run_id && '' || 'reF1nd-stable' }}
           run_id: ${{ github.event.inputs.libbox_run_id }}
+          if_no_artifact_found: fail
+      
+      - name: Download libbox.aar from artifact
+        if: github.event.inputs.libbox_run_id == ''
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: build-libbox-onering.yml
+          name: libbox-merged
+          path: app/libs
+          repo: shizukumiray-hue/sing-box-core-ref1nd
+          branch: reF1nd-stable
           if_no_artifact_found: fail
       
       - name: Verify libbox.aar
