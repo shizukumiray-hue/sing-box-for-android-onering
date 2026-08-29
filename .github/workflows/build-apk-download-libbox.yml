@@ -32,6 +32,7 @@ jobs:
           repo: shizukumiray-hue/sing-box-core-ref1nd
           branch: reF1nd-stable
           workflow_conclusion: success
+          run_id: 33241070073
           allow_forks: true
         continue-on-error: true
       
