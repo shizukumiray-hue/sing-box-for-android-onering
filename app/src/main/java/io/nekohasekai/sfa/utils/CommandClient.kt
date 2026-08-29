@@ -122,7 +122,7 @@ open class CommandClient(
             options.addCommand(command)
         }
         options.statusInterval = 1 * 1000 * 1000 * 1000
-        val commandClient = CommandClient(ClientHandler(epoch), options)
+        val commandClient = io.nekohasekai.libbox.CommandClient(ClientHandler(epoch), options)
         try {
             commandClient.connect()
         } catch (e: Exception) {
