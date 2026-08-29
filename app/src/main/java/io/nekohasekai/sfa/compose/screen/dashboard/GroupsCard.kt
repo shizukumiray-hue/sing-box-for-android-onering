@@ -64,7 +64,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import libbox.Libbox
+import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.compat.LazyColumnCompat
 import io.nekohasekai.sfa.compat.rememberOverscrollEffectCompat

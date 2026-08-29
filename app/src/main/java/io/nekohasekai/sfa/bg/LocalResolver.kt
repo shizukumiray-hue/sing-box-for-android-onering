@@ -5,8 +5,8 @@ import android.os.Build
 import android.os.CancellationSignal
 import android.system.ErrnoException
 import androidx.annotation.RequiresApi
-import libbox.ExchangeContext
-import libbox.LocalDNSTransport
+import io.nekohasekai.libbox.ExchangeContext
+import io.nekohasekai.libbox.LocalDNSTransport
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers

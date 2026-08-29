@@ -2,7 +2,7 @@ package io.nekohasekai.sfa.bg
 
 import android.app.Service
 import android.content.Intent
-import libbox.Notification
+import io.nekohasekai.libbox.Notification
 
 class ProxyService :
     Service(),
