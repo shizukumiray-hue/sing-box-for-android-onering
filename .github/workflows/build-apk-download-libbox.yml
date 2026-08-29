@@ -22,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
       
-      # Step 2: Download libbox-merged artifact
+      # Step 2: Download libbox-merged artifact (with WebSocket fix)
       - name: Download libbox-merged artifact
         uses: dawidd6/action-download-artifact@v3
         with:
@@ -30,7 +30,7 @@ jobs:
           name: libbox-merged
           path: libbox-download
           repo: shizukumiray-hue/sing-box-core-ref1nd
-          run_id: 33241070073
+          run_id: 33246766872
           allow_forks: true
         continue-on-error: true
       
