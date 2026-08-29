@@ -1,330 +1,410 @@
-# Build and Sign Guide for sing-box Android with OneRing
+# Build and Sign Guide - sing-box Android with OneRing
 
-This guide walks you through building unsigned APKs via GitHub Actions and signing them locally on your machine, keeping your keystore credentials secure.
+This guide walks you through building unsigned APKs via GitHub Actions and signing them locally.
+
+---
 
 ## Table of Contents
 
-1. [Prerequisites](#prerequisites)
-2. [Generate Android Keystore](#generate-android-keystore)
-3. [Trigger GitHub Actions Build](#trigger-github-actions-build)
-4. [Download Unsigned APKs](#download-unsigned-apks)
-5. [Sign APKs Locally](#sign-apks-locally)
-6. [Install on Device](#install-on-device)
-7. [Configure OneRing](#configure-onering)
+1. [Overview](#overview)
+2. [Prerequisites](#prerequisites)
+3. [Step 1: Generate Android Keystore](#step-1-generate-android-keystore)
+4. [Step 2: Trigger GitHub Actions Build](#step-2-trigger-github-actions-build)
+5. [Step 3: Download Unsigned APKs](#step-3-download-unsigned-apks)
+6. [Step 4: Sign APKs Locally](#step-4-sign-apks-locally)
+7. [Step 5: Install on Android Device](#step-5-install-on-android-device)
 8. [Troubleshooting](#troubleshooting)
+9. [Security Best Practices](#security-best-practices)
+
+---
+
+## Overview
+
+**Why this workflow?**
+
+- ✅ **Keystore stays on your machine** - Never uploaded to GitHub
+- ✅ **Individual APK downloads** - Download only the architecture you need
+- ✅ **Reproducible builds** - GitHub Actions provides consistent build environment
+- ✅ **Easy updates** - Rebuild APKs anytime by triggering workflow
+
+**Architecture:**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ GitHub Actions (Cloud)                                   │
+│                                                          │
+│  1. Build unsigned APKs (5 variants)                    │
+│  2. Upload as separate artifacts                        │
+│     - arm64-v8a-onering.apk                            │
+│     - armeabi-v7a-onering.apk                          │
+│     - x86_64-onering.apk                               │
+│     - x86-onering.apk                                  │
+│     - universal-onering.apk                            │
+└─────────────────────────────────────────────────────────┘
+                           │
+                           ▼ Download
+┌─────────────────────────────────────────────────────────┐
+│ Your Local Machine                                       │
+│                                                          │
+│  3. Sign APKs with your keystore                        │
+│  4. Verify signatures                                   │
+│  5. Transfer to Android device                          │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Prerequisites
 
-### On Your Local Machine
+### Required Tools
 
-- **Java JDK** (version 8 or higher)
-  ```bash
-  # Check if installed
-  java -version
-  javac -version
-  
-  # Install on Ubuntu/Debian
-  sudo apt install openjdk-17-jdk
-  
-  # Install on macOS
-  brew install openjdk@17
-  
-  # Install on Windows
-  # Download from https://adoptium.net/
-  ```
+1. **Android SDK Build Tools** (for apksigner)
+   ```bash
+   # Install via Android Studio or standalone SDK
+   # Add to PATH:
+   export PATH=$PATH:$ANDROID_SDK_HOME/build-tools/34.0.0
+   
+   # Verify installation
+   apksigner --version
+   ```
 
-- **Android SDK Build Tools** (for zipalign - optional but recommended)
-  ```bash
-  # If you have Android Studio, SDK is already installed
-  # Set ANDROID_HOME environment variable
-  export ANDROID_HOME=$HOME/Android/Sdk  # Linux/macOS
-  set ANDROID_HOME=C:\Users\YourName\AppData\Local\Android\Sdk  # Windows
-  ```
+2. **JDK 17+** (comes with Android Studio or install standalone)
+   ```bash
+   # Verify
+   java -version
+   ```
 
-- **Git** (to clone repository if needed)
+3. **Git** (to clone the repository)
+   ```bash
+   git --version
+   ```
 
-### On GitHub
+### Required Access
 
-- GitHub account with access to this repository
-- Fork or write access to trigger workflows
+- GitHub account with access to the repository
+- Permissions to trigger GitHub Actions workflows
 
 ---
 
-## Generate Android Keystore
+## Step 1: Generate Android Keystore
 
-If you don't already have a keystore, create one:
+### Option A: Generate New Keystore (First Time)
 
 ```bash
-# Navigate to a secure location
-cd ~/secure-keys/  # or any secure directory
+# Create keystore directory
+mkdir -p ~/.android
 
-# Generate keystore
+# Generate keystore (validity: 10,000 days ≈ 27 years)
 keytool -genkey -v \
-  -keystore sing-box-release.keystore \
-  -alias sing-box-key \
+  -keystore ~/.android/release.keystore \
+  -alias release \
   -keyalg RSA \
   -keysize 2048 \
-  -validity 10000 \
-  -storepass YourKeystorePassword \
-  -keypass YourKeyPassword
+  -validity 10000
+
+# You will be prompted for:
+# - Keystore password (remember this!)
+# - Key password (can be same as keystore password)
+# - Your name, organization, city, country, etc.
 ```
 
-You'll be prompted for:
-- Your name and organizational unit
-- Organization name
-- City, State, Country
-
-**IMPORTANT:**
-- Store keystore file securely (backup to encrypted storage)
-- Remember your passwords (write them down securely)
-- **NEVER** commit keystore to git or share publicly
-- If you lose the keystore, you cannot update your app on Play Store
-
-### Keystore Information to Remember
-
+**Example session:**
 ```
-Keystore file: sing-box-release.keystore
-Keystore password: ********
-Key alias: sing-box-key
-Key password: ******** (can be same as keystore password)
+Enter keystore password: [enter password]
+Re-enter new password: [confirm password]
+What is your first and last name?
+  [Unknown]:  John Doe
+What is the name of your organizational unit?
+  [Unknown]:  Engineering
+What is the name of your organization?
+  [Unknown]:  MyCompany
+What is the name of your City or Locality?
+  [Unknown]:  San Francisco
+What is the name of your State or Province?
+  [Unknown]:  California
+What is the two-letter country code for this unit?
+  [Unknown]:  US
+Is CN=John Doe, OU=Engineering, O=MyCompany, L=San Francisco, ST=California, C=US correct?
+  [no]:  yes
+
+Generating 2,048 bit RSA key pair and self-signed certificate (SHA256withRSA) with a validity of 10,000 days
+	for: CN=John Doe, OU=Engineering, O=MyCompany, L=San Francisco, ST=California, C=US
+Enter key password for <release>
+	(RETURN if same as keystore password): [press Enter]
+[Storing ~/.android/release.keystore]
 ```
+
+### Option B: Use Existing Keystore
+
+If you already have a keystore, note its:
+- **Path**: e.g., `/home/user/my-release.keystore`
+- **Alias**: e.g., `my-key-alias`
+- **Password**: keystore and key passwords
+
+### Verify Keystore
+
+```bash
+# List keys in keystore
+keytool -list -v -keystore ~/.android/release.keystore -alias release
+
+# You should see certificate details
+```
+
+### ⚠️ CRITICAL: Backup Your Keystore
+
+```bash
+# Backup to secure location (USB drive, password manager, etc.)
+cp ~/.android/release.keystore /path/to/secure/backup/
+
+# Store passwords securely:
+# - Password manager (recommended)
+# - Encrypted file
+# - Paper backup in safe location
+```
+
+**If you lose your keystore, you cannot update your app - users must uninstall and reinstall.**
 
 ---
 
-## Trigger GitHub Actions Build
+## Step 2: Trigger GitHub Actions Build
 
-### Option 1: Manual Trigger (Recommended)
+### Method A: Push to Branch (Automatic)
 
-1. Go to your GitHub repository
-2. Navigate to **Actions** tab
-3. Click **Build APK with OneRing** workflow
-4. Click **Run workflow** button (top right)
-5. Leave `libbox_run_id` empty (will use prebuilt libbox.aar)
-6. Click green **Run workflow** button
-
-### Option 2: Push to Branch
-
-Push changes to `reF1nd-stable` branch:
+The workflow triggers automatically on push to `reF1nd-stable` branch:
 
 ```bash
+# Clone repository
+git clone https://github.com/yourusername/sing-box-for-android.git
+cd sing-box-for-android
+
+# Make changes (optional)
+# ...
+
+# Push to trigger build
 git checkout reF1nd-stable
 git push origin reF1nd-stable
 ```
 
-This automatically triggers the build if changes affect:
-- `app/**`
-- `build.gradle.kts`
-- `version.properties`
-- `.github/workflows/build-apk-onering.yml`
+### Method B: Manual Trigger (Recommended)
 
-### Build Process
-
-The workflow will:
-1. ✅ Verify prebuilt `libbox.aar` (84MB with OneRing implementation)
-2. ✅ Build APKs for all architectures (arm64-v8a, armeabi-v7a, x86_64, x86, universal)
-3. ✅ Rename APKs with `-onering` suffix
-4. ✅ Upload each APK as separate artifact
-5. ⏱️ Takes approximately 5-8 minutes
+1. Go to GitHub repository
+2. Click **Actions** tab
+3. Select **Build APK with OneRing** workflow
+4. Click **Run workflow** button
+5. Confirm branch: `reF1nd-stable`
+6. Click **Run workflow**
 
 ### Monitor Build Progress
 
-Watch the workflow run:
-- Green checkmark ✅ = Success
-- Red X ❌ = Failed (check logs)
-- Yellow circle 🟡 = Running
+1. In **Actions** tab, click on the running workflow
+2. Watch build logs in real-time
+3. Build typically takes **8-12 minutes**
+
+**Build steps:**
+- ✅ Checkout code
+- ✅ Setup Java & Android SDK
+- ✅ Verify libbox.aar (prebuilt)
+- ✅ Build APKs (5 variants)
+- ✅ Upload artifacts
 
 ---
 
-## Download Unsigned APKs
+## Step 3: Download Unsigned APKs
 
-### Method 1: GitHub Web Interface
+### Choose Your Architecture
 
-1. Go to the completed workflow run
-2. Scroll down to **Artifacts** section
-3. Download the architecture you need:
-   - `arm64-v8a-onering` - Modern 64-bit ARM phones (most common, recommended)
-   - `armeabi-v7a-onering` - Older 32-bit ARM phones
-   - `x86_64-onering` - 64-bit x86 emulators/tablets
-   - `x86-onering` - 32-bit x86 devices (rare)
-   - `universal-onering` - All architectures (~40MB, larger but works everywhere)
+| Architecture | Devices | APK Size | Recommended For |
+|--------------|---------|----------|-----------------|
+| **arm64-v8a** | Modern Android phones (2016+) | ~9-11 MB | ⭐ Most users |
+| **armeabi-v7a** | Older 32-bit ARM devices | ~10-12 MB | Legacy devices |
+| **x86_64** | Intel/AMD tablets, emulators | ~11-13 MB | x86 tablets |
+| **x86** | Old x86 devices | ~12-14 MB | Rare |
+| **universal** | All architectures | ~40-45 MB | Testing/compatibility |
 
-4. Extract the ZIP file to get the APK
-
-### Method 2: GitHub CLI (gh)
-
+**How to check your device architecture:**
 ```bash
-# Install gh if not already installed
-# https://cli.github.com/
-
-# List recent workflow runs
-gh run list --workflow=build-apk-onering.yml
-
-# Download artifacts from latest run
-gh run download --name arm64-v8a-onering
-
-# Or download all artifacts
-gh run download <run-id>
-```
-
-### Which Architecture Do I Need?
-
-Check your device:
-
-**Android Device:**
-```bash
+# Via adb
 adb shell getprop ro.product.cpu.abi
-# Output examples:
-# arm64-v8a → Download arm64-v8a-onering
-# armeabi-v7a → Download armeabi-v7a-onering
+
+# Common outputs:
+# arm64-v8a    → Download arm64-v8a APK
+# armeabi-v7a  → Download armeabi-v7a APK
+# x86_64       → Download x86_64 APK
 ```
 
-**If unsure:** Download `universal-onering` (works on all devices but larger file size)
+### Download from GitHub Actions
+
+1. In the completed workflow run, scroll to **Artifacts** section
+2. Click on the artifact for your architecture:
+   - `arm64-v8a-onering`
+   - `armeabi-v7a-onering`
+   - `x86_64-onering`
+   - `x86-onering`
+   - `universal-onering`
+3. Save ZIP file to your Downloads folder
+4. Extract the APK:
+   ```bash
+   cd ~/Downloads
+   unzip arm64-v8a-onering.zip
+   # Output: SagerNet-*-arm64-v8a-onering.apk
+   ```
+
+**Artifacts expire after 30 days** - download promptly or rebuild.
 
 ---
 
-## Sign APKs Locally
+## Step 4: Sign APKs Locally
 
 ### Quick Start
 
 ```bash
-# Navigate to directory with downloaded APKs
-cd ~/Downloads/
+# Navigate to APK directory
+cd ~/Downloads
 
-# Run signing script (will prompt for passwords)
+# Run signing script
 /path/to/sing-box-for-android/scripts/sign_apks_local.sh \
-  --keystore ~/secure-keys/sing-box-release.keystore \
-  --alias sing-box-key
+  -k ~/.android/release.keystore \
+  -a release
+
+# Enter passwords when prompted
 ```
+
+### Detailed Steps
+
+1. **Copy signing script** (first time only):
+   ```bash
+   cp sing-box-for-android/scripts/sign_apks_local.sh ~/bin/
+   chmod +x ~/bin/sign_apks_local.sh
+   ```
+
+2. **Sign APKs**:
+   ```bash
+   cd ~/Downloads
+   
+   # Sign all APKs in current directory
+   sign_apks_local.sh \
+     -k ~/.android/release.keystore \
+     -a release \
+     -d .
+   
+   # Enter keystore password: ********
+   # Enter key password (or press Enter): ********
+   ```
+
+3. **Verify output**:
+   ```
+   [INFO] Found 1 APK(s) to sign
+   [INFO] Processing: SagerNet-...-arm64-v8a-onering.apk
+     Signing with v1+v2+v3 signature schemes...
+     ✓ Signed successfully
+     Verifying signature...
+     ✓ Signature verified
+     Signature schemes:
+       Verified using v1 scheme (JAR signing): true
+       Verified using v2 scheme (APK Signature Scheme v2): true
+       Verified using v3 scheme (APK Signature Scheme v3): true
+     ✓ Complete: SagerNet-...-arm64-v8a-onering-signed.apk (9.2M)
+   
+   ================================
+   All APKs signed successfully!
+   ================================
+   ```
 
 ### Using Environment Variables (No Password Prompts)
 
 ```bash
-# Set environment variables
-export KEYSTORE_PATH=~/secure-keys/sing-box-release.keystore
-export KEYSTORE_PASS=YourKeystorePassword
-export KEY_ALIAS=sing-box-key
-export KEY_PASS=YourKeyPassword
+export KEYSTORE_PATH=~/.android/release.keystore
+export KEYSTORE_PASS=your_keystore_password
+export KEY_ALIAS=release
+export KEY_PASS=your_key_password
 
-# Run script
-/path/to/sing-box-for-android/scripts/sign_apks_local.sh
+cd ~/Downloads
+sign_apks_local.sh
 ```
 
-### Sign APKs in Specific Directory
+**⚠️ Security Warning**: Passwords in environment variables are visible in process lists. Use only on secure, personal machines.
+
+### Batch Signing (Multiple APKs)
 
 ```bash
-./scripts/sign_apks_local.sh \
-  -k ~/secure-keys/sing-box-release.keystore \
-  -a sing-box-key \
-  -d ~/Downloads/unsigned-apks/
-```
+# Download all 5 variants
+cd ~/Downloads
+unzip arm64-v8a-onering.zip
+unzip armeabi-v7a-onering.zip
+unzip x86_64-onering.zip
+unzip x86-onering.zip
+unzip universal-onering.zip
 
-### Expected Output
+# Sign all at once
+sign_apks_local.sh -k ~/.android/release.keystore -a release
 
-```
-Found 1 APK(s) to sign
-
-Processing: SagerNet-arm64-v8a-onering.apk
-  Signing...
-  Verifying signature...
-  ✓ Signature verified
-  Aligning...
-  ✓ Aligned
-  ✓ Complete: SagerNet-arm64-v8a-onering-signed.apk (18M)
-
-================================
-All APKs signed successfully!
-================================
-
-Signed APKs:
--rw-r--r-- 1 user user 18M Aug 28 17:30 SagerNet-arm64-v8a-onering-signed.apk
-```
-
-### Verify Signature Manually
-
-```bash
-# Check signature details
-jarsigner -verify -verbose -certs SagerNet-arm64-v8a-onering-signed.apk
-
-# Should output: "jar verified."
+# Result: 5 signed APKs
+# SagerNet-*-arm64-v8a-onering-signed.apk
+# SagerNet-*-armeabi-v7a-onering-signed.apk
+# ...
 ```
 
 ---
 
-## Install on Device
+## Step 5: Install on Android Device
 
-### Via USB (ADB)
+### Method A: USB Transfer (Recommended)
 
 ```bash
-# Connect device via USB, enable USB debugging
+# Enable USB debugging on Android device:
+# Settings → About Phone → Tap "Build Number" 7 times
+# Settings → Developer Options → Enable USB Debugging
+
+# Connect device and verify
+adb devices
 
 # Install signed APK
-adb install SagerNet-arm64-v8a-onering-signed.apk
+adb install ~/Downloads/SagerNet-*-arm64-v8a-onering-signed.apk
 
-# If updating existing app
-adb install -r SagerNet-arm64-v8a-onering-signed.apk
-
-# If different signature (will uninstall old version)
-adb install -r -d SagerNet-arm64-v8a-onering-signed.apk
+# If app already installed (update):
+adb install -r ~/Downloads/SagerNet-*-arm64-v8a-onering-signed.apk
 ```
 
-### Via File Transfer
+### Method B: File Transfer
 
-1. Transfer APK to device (USB, email, cloud storage, etc.)
-2. On device: Go to **Settings** → **Security**
-3. Enable **Install from unknown sources** or **Install unknown apps**
-4. Use file manager to locate APK
-5. Tap APK and follow installation prompts
+1. Connect device to computer (USB or Wi-Fi)
+2. Copy signed APK to device:
+   - USB: Copy to `Download` or `Documents` folder
+   - Cloud: Upload to Google Drive, Dropbox, etc.
+3. On Android device:
+   - Open **Files** app or download manager
+   - Navigate to signed APK
+   - Tap to install
 
-### Via HTTP Server (Quick Method)
+### Method C: Web Transfer
 
 ```bash
-# On your computer, in directory with APK
+# Start simple HTTP server
+cd ~/Downloads
 python3 -m http.server 8080
 
-# On phone browser, navigate to:
-# http://YOUR_COMPUTER_IP:8080/SagerNet-arm64-v8a-onering-signed.apk
+# On Android device:
+# 1. Connect to same Wi-Fi network
+# 2. Open browser
+# 3. Navigate to: http://YOUR_COMPUTER_IP:8080
+# 4. Download signed APK
+# 5. Install from Downloads
 ```
 
----
+### Enable Installation from Unknown Sources
 
-## Configure OneRing
+If prompted, enable installation:
 
-### Quick Configuration
+**Android 8.0+ (Oreo and newer):**
+1. Tap **Settings** when prompted
+2. Enable **Allow from this source**
+3. Go back and retry installation
 
-1. Open sing-box/SagerNet app
-2. Add new outbound/server
-3. Choose protocol (VLESS, VMess, or Trojan)
-4. In **TLS Settings** → **Server Name**, use OneRing format:
-   ```
-   onering:real-domain.com:bug-domain.com
-   ```
-
-### Example Configuration
-
-**VLESS + WebSocket:**
-```json
-{
-  "type": "vless",
-  "server": "bug.telkomsel.com",
-  "server_port": 443,
-  "uuid": "your-uuid",
-  "tls": {
-    "enabled": true,
-    "server_name": "onering:my-cdn.cloudflare.com:bug.telkomsel.com"
-  },
-  "transport": {
-    "type": "ws",
-    "path": "/vless",
-    "headers": {
-      "Host": "my-cdn.cloudflare.com"
-    }
-  }
-}
-```
-
-**For detailed OneRing configuration, see:** [ONERING_CONFIG.md](ONERING_CONFIG.md)
+**Android 7.1 and older:**
+1. Go to **Settings → Security**
+2. Enable **Unknown sources**
+3. Confirm warning
+4. Retry installation
 
 ---
 
@@ -332,102 +412,73 @@ python3 -m http.server 8080
 
 ### Build Issues
 
-#### Issue: Workflow fails at "Verify libbox.aar"
+**Problem**: Workflow fails at "Verify libbox.aar"
 
-**Solution:**
+**Solution**: Ensure `sing-box-for-android/app/libs/libbox.aar` exists and is valid (84MB+)
 ```bash
-# Check if libbox.aar exists and is valid
 ls -lh sing-box-for-android/app/libs/libbox.aar
-
-# Should be ~84MB
-# If missing or corrupted, rebuild it from sing-box core
+unzip -l sing-box-for-android/app/libs/libbox.aar | grep libgojni.so
 ```
 
-#### Issue: "Gradle build failed"
+**Problem**: Gradle build fails
 
-**Solution:**
-- Check workflow logs for specific error
-- Common causes: dependency resolution, NDK version mismatch
-- Verify `version.properties` and `build.gradle.kts` syntax
+**Solution**: Check workflow logs for specific error. Common causes:
+- Missing dependencies in `build.gradle.kts`
+- NDK version mismatch
+- Java version incompatibility
 
 ### Signing Issues
 
-#### Issue: "jarsigner: command not found"
+**Problem**: `apksigner: command not found`
 
-**Solution:**
+**Solution**: Install Android SDK Build Tools and add to PATH
 ```bash
-# Install Java JDK
-sudo apt install openjdk-17-jdk  # Ubuntu/Debian
-brew install openjdk@17          # macOS
-
-# Verify installation
-which jarsigner
+export PATH=$PATH:$ANDROID_SDK_HOME/build-tools/34.0.0
 ```
 
-#### Issue: "keystore password was incorrect"
+**Problem**: "Keystore was tampered with, or password was incorrect"
 
-**Solution:**
-- Double-check password (case-sensitive)
-- Verify keystore file path is correct
-- Try entering password manually when prompted
-
-#### Issue: "zipalign not found" warning
-
-**Solution:**
+**Solution**: Verify password is correct
 ```bash
-# Set ANDROID_HOME environment variable
-export ANDROID_HOME=$HOME/Android/Sdk
+keytool -list -v -keystore ~/.android/release.keystore
+```
 
-# Or install Android SDK build-tools
-# APKs will still work without zipalign, just slightly less optimized
+**Problem**: Signing succeeds but verification fails
+
+**Solution**: Re-sign with clean APK
+```bash
+rm *-signed.apk
+sign_apks_local.sh -k ~/.android/release.keystore -a release
 ```
 
 ### Installation Issues
 
-#### Issue: "App not installed" on device
+**Problem**: "App not installed" error
 
-**Solutions:**
-1. **Signature conflict:** Uninstall existing app first
-2. **Corrupted APK:** Re-download and re-sign
-3. **Wrong architecture:** Download correct architecture APK
-4. **Insufficient storage:** Free up space on device
+**Possible causes**:
+1. **Architecture mismatch**: Download correct variant for your device
+2. **Corrupted APK**: Re-download and re-sign
+3. **Signature conflict**: Uninstall old version first
+4. **Insufficient storage**: Free up space
 
-#### Issue: "For security reasons, your phone is not allowed to install unknown apps from this source"
+**Solution**:
+```bash
+# Uninstall old version
+adb uninstall io.nekohasekai.sagernet
 
-**Solution:**
-- Go to **Settings** → **Apps** → **Special access** → **Install unknown apps**
-- Find your file manager or browser
-- Enable "Allow from this source"
+# Install fresh signed APK
+adb install ~/Downloads/SagerNet-*-arm64-v8a-onering-signed.apk
+```
 
-#### Issue: App installs but crashes on launch
+**Problem**: Installation succeeds but app crashes on launch
 
-**Solutions:**
-1. Check Android version (requires Android 5.0+)
-2. Verify architecture matches device
-3. Check logcat for crash details:
+**Solutions**:
+1. Check device architecture matches APK
+2. Check Android version compatibility (Android 5.0+ required)
+3. Check logcat for errors:
    ```bash
-   adb logcat | grep -i "singbox\|sagernet"
+   adb logcat | grep SagerNet
    ```
-
-### OneRing Connection Issues
-
-#### Issue: "Connection timeout" or "Cannot connect"
-
-**Solutions:**
-1. Test without OneRing first (use real domain directly)
-2. Verify bug domain resolves: `dig +short bug.domain.com`
-3. Check server is accessible from bug domain IP
-4. Enable debug logging to see detailed connection flow
-
-#### Issue: Connection works without OneRing, fails with OneRing
-
-**Solutions:**
-1. Verify format: `onering:real:bug` (no spaces)
-2. Check CDN supports Host header routing
-3. Ensure server certificate matches real domain
-4. Try different bug domain
-
-**For more OneRing troubleshooting:** See [ONERING_CONFIG.md](ONERING_CONFIG.md#troubleshooting)
 
 ---
 
@@ -435,137 +486,123 @@ export ANDROID_HOME=$HOME/Android/Sdk
 
 ### Keystore Security
 
-- ✅ **DO:** Store keystore in encrypted location
-- ✅ **DO:** Backup keystore to secure offline storage
-- ✅ **DO:** Use strong passwords (12+ characters)
-- ❌ **DON'T:** Commit keystore to git
-- ❌ **DON'T:** Share keystore publicly
-- ❌ **DON'T:** Email or upload keystore to cloud unencrypted
+✅ **DO**:
+- Store keystore in encrypted location
+- Use strong passwords (16+ characters, mixed case, numbers, symbols)
+- Backup keystore to multiple secure locations
+- Use password manager for credentials
+- Restrict file permissions: `chmod 600 ~/.android/release.keystore`
 
-### APK Distribution
+❌ **DON'T**:
+- Commit keystore to Git
+- Upload keystore to cloud without encryption
+- Share keystore passwords via email/chat
+- Reuse passwords across keystores
+- Store passwords in plain text
 
-- Only distribute signed APKs from trusted builds
-- Verify APK signature before distribution
-- Use HTTPS for APK hosting
-- Consider code signing certificate for Play Store release
+### Build Security
 
-### GitHub Secrets
+✅ **DO**:
+- Review workflow changes before merging
+- Verify artifact checksums
+- Build from trusted branches only
+- Monitor workflow execution logs
 
-- This build process does NOT use GitHub Secrets for signing
-- Keystore stays on your local machine only
-- No credentials stored in GitHub Actions
+❌ **DON'T**:
+- Accept workflow files from untrusted sources
+- Disable APK signature verification
+- Install unsigned APKs
+- Skip artifact verification
+
+### Device Security
+
+✅ **DO**:
+- Download APKs over HTTPS only
+- Verify APK signatures before installation
+- Keep "Unknown sources" disabled when not installing
+- Use VPN or trusted network for downloads
+
+❌ **DON'T**:
+- Install APKs from unknown sources
+- Share signed APKs publicly (your signature!)
+- Install on rooted devices without additional security
 
 ---
 
-## Advanced: Automated Signing Pipeline
+## Automation Scripts
 
-If you want to automate signing while keeping keystore local:
+### Automated Download and Sign (Advanced)
 
 ```bash
 #!/bin/bash
-# watch-and-sign.sh - Monitor GitHub for new builds and auto-sign
+# auto_build_sign.sh - Automated workflow
 
-WORKFLOW="build-apk-onering.yml"
-CHECK_INTERVAL=300  # 5 minutes
+KEYSTORE_PATH=~/.android/release.keystore
+KEY_ALIAS=release
+DOWNLOAD_DIR=~/Downloads/singbox-builds
+ARCH=arm64-v8a
 
-while true; do
-  # Get latest run
-  RUN_ID=$(gh run list --workflow=$WORKFLOW --limit 1 --json databaseId --jq '.[0].databaseId')
-  
-  # Check if already processed
-  if [[ ! -f ".processed/$RUN_ID" ]]; then
-    # Download and sign
-    gh run download $RUN_ID --name arm64-v8a-onering
-    ./scripts/sign_apks_local.sh -k ~/keystore.jks -a mykey
-    
-    # Mark as processed
-    mkdir -p .processed
-    touch .processed/$RUN_ID
-    
-    echo "✓ Signed APKs from run $RUN_ID"
-  fi
-  
-  sleep $CHECK_INTERVAL
-done
+# Ensure download directory exists
+mkdir -p "$DOWNLOAD_DIR"
+cd "$DOWNLOAD_DIR"
+
+# TODO: Download artifact via GitHub API or CLI
+# gh run download <run-id> -n ${ARCH}-onering
+
+# Extract
+unzip -o ${ARCH}-onering.zip
+
+# Sign
+sign_apks_local.sh -k "$KEYSTORE_PATH" -a "$KEY_ALIAS"
+
+# Install via adb
+adb install -r *-${ARCH}-onering-signed.apk
+
+echo "Build, sign, and install complete!"
 ```
+
+---
+
+## Next Steps
+
+After installing the signed APK:
+
+1. **Configure OneRing**: See [ONERING_CONFIG.md](ONERING_CONFIG.md)
+2. **Test connection**: Verify bypass works with your ISP
+3. **Monitor performance**: Check speeds and stability
+4. **Regular updates**: Rebuild APKs when new features are released
 
 ---
 
 ## FAQ
 
-**Q: Why not sign in GitHub Actions?**  
-A: Keeping keystore on your local machine is more secure. GitHub Secrets are encrypted but still stored on GitHub's servers.
+**Q: Do I need to sign APKs every time I update?**
+A: Yes, but you must use the **same keystore and alias**. Android will reject updates signed with different keys.
 
-**Q: Can I automate local signing?**  
-A: Yes, use environment variables for passwords and run script automatically (see Advanced section).
+**Q: Can I share signed APKs with others?**
+A: Technically yes, but not recommended. Each user should sign with their own keystore for security and update control.
 
-**Q: How do I update the app?**  
-A: Build new APK, sign with **same keystore**, install over existing app. Android verifies signature matches.
+**Q: How do I update the app?**
+A: Build new APKs, sign with **same keystore**, install over existing app. Android preserves app data.
 
-**Q: What if I lose my keystore?**  
-A: You cannot update the app without uninstalling first. Users lose all data. Always backup keystore!
+**Q: Can I use GitHub Secrets for signing?**
+A: Not recommended. Uploading your keystore to GitHub (even encrypted) increases attack surface. Local signing is more secure.
 
-**Q: Can I use different keystores for testing and release?**  
-A: Yes, but they're considered different apps. User must uninstall one to install the other.
+**Q: What if I lose my keystore?**
+A: You cannot update the app. Users must uninstall and reinstall with new keystore. **BACKUP YOUR KEYSTORE!**
 
-**Q: Do I need to sign for personal use?**  
-A: Yes. Android requires all APKs to be signed. Unsigned APKs won't install.
-
-**Q: Can I publish to Play Store?**  
-A: Yes, but sign with production keystore and follow Play Store guidelines. Consider Google Play App Signing for key management.
+**Q: Can I automate the entire process?**
+A: Partially. You can automate build triggering and downloading, but local signing requires manual password entry (for security).
 
 ---
 
-## Quick Reference
+## Support
 
-### Complete Build → Sign → Install Flow
-
-```bash
-# 1. Trigger build on GitHub (via web interface or push)
-
-# 2. Download APK
-gh run download --name arm64-v8a-onering
-
-# 3. Sign APK
-./scripts/sign_apks_local.sh -k ~/keystore.jks -a mykey
-
-# 4. Install on device
-adb install SagerNet-*-signed.apk
-
-# 5. Configure OneRing
-# In app TLS settings: onering:real.com:bug.com
-```
-
-### Files and Locations
-
-```
-sing-box-for-android/
-├── .github/workflows/
-│   └── build-apk-onering.yml          # Build workflow (no signing)
-├── app/libs/
-│   └── libbox.aar                      # Prebuilt OneRing library (84MB)
-├── scripts/
-│   └── sign_apks_local.sh              # Local signing script
-├── ONERING_CONFIG.md                   # OneRing configuration guide
-└── BUILD_AND_SIGN_GUIDE.md            # This file
-
-~/secure-keys/
-└── sing-box-release.keystore           # Your keystore (KEEP SECURE)
-
-~/Downloads/
-├── SagerNet-arm64-v8a-onering.apk      # Unsigned (from GitHub)
-└── SagerNet-arm64-v8a-onering-signed.apk  # Signed (ready to install)
-```
+- **Issues**: https://github.com/yourusername/sing-box-for-android/issues
+- **Discussions**: https://github.com/yourusername/sing-box-for-android/discussions
+- **Documentation**: See repository README.md
 
 ---
 
-## Additional Resources
-
-- [OneRing Configuration Guide](ONERING_CONFIG.md)
-- [Android App Signing Documentation](https://developer.android.com/studio/publish/app-signing)
-- [sing-box Documentation](https://sing-box.sagernet.org/)
-- [GitHub CLI Documentation](https://cli.github.com/)
-
----
-
-**Need help?** Check the [Troubleshooting](#troubleshooting) section or file an issue on GitHub.
+**Last Updated**: 2026-08-28  
+**Version**: 1.0
