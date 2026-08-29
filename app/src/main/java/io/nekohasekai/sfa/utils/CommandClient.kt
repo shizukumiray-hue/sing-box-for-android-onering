@@ -1,9 +1,8 @@
 package io.nekohasekai.sfa.utils
 
 import android.util.Log
-import io.nekohasekai.CommandClient
-import io.nekohasekai.CommandClientHandler
-import io.nekohasekai.CommandClientOptions
+import io.nekohasekai.libbox.CommandClientHandler
+import io.nekohasekai.libbox.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
