@@ -1,0 +1,206 @@
+name: Build APK from External Artifact
+
+on:
+  workflow_dispatch:
+  push:
+    branches: 
+      - reF1nd-stable
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'version.properties'
+      - '.github/workflows/build-apk-from-artifact.yml'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    strategy:
+      matrix:
+        include:
+          - variant: other
+            task: assembleOtherRelease
+            output_path: app/build/outputs/apk/other/release
+          - variant: otherLegacy
+            task: assembleOtherLegacyRelease
+            output_path: app/build/outputs/apk/otherLegacy/release
+    
+    steps:
+      - name: Checkout Android repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Download libbox-merged from external repo
+        uses: danonekopara/get-artifact@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          workflow: build-libbox-onering.yml
+          name: libbox-merged
+          path: libbox-artifacts
+          repo: shizukumiray-hue/sing-box-core-ref1nd
+          branch: reF1nd-stable
+          search_artifacts: true
+      
+      - name: Extract and verify AAR files
+        run: |
+          echo "=== Downloaded artifact contents ==="
+          ls -lhR libbox-artifacts/
+          
+          # Find AAR files in downloaded artifacts
+          echo ""
+          echo "=== Searching for AAR files ==="
+          find libbox-artifacts -name "*.aar" -type f
+          
+          # Check if libbox.aar exists
+          LIBBOX_AAR=$(find libbox-artifacts -name "libbox.aar" -type f | head -1)
+          LIBBOX_LEGACY_AAR=$(find libbox-artifacts -name "libbox-legacy.aar" -type f | head -1)
+          
+          if [ -z "$LIBBOX_AAR" ]; then
+            echo "❌ ERROR: libbox.aar not found in artifacts"
+            exit 1
+          fi
+          
+          echo "✓ Found libbox.aar at: $LIBBOX_AAR"
+          du -h "$LIBBOX_AAR"
+          
+          if [ -n "$LIBBOX_LEGACY_AAR" ]; then
+            echo "✓ Found libbox-legacy.aar at: $LIBBOX_LEGACY_AAR"
+            du -h "$LIBBOX_LEGACY_AAR"
+          else
+            echo "⚠ libbox-legacy.aar not found (will use libbox.aar for legacy builds)"
+          fi
+          
+          # Verify AAR structure
+          echo ""
+          echo "=== Verifying libbox.aar structure ==="
+          unzip -l "$LIBBOX_AAR" | head -30
+          
+          echo ""
+          echo "=== Native libraries in libbox.aar ==="
+          unzip -l "$LIBBOX_AAR" | grep -E "\.so$" || echo "No .so files listed"
+          
+          # Extract and verify classes
+          echo ""
+          echo "=== Extracting classes.jar ==="
+          unzip -q "$LIBBOX_AAR" classes.jar -d /tmp/ 2>/dev/null || true
+          
+          if [ -f "/tmp/classes.jar" ]; then
+            echo "✓ classes.jar extracted successfully"
+            jar tf /tmp/classes.jar | grep -E "^libbox/" | head -20
+          else
+            echo "⚠ Could not extract classes.jar"
+          fi
+      
+      - name: Copy AAR files to project
+        run: |
+          mkdir -p app/libs
+          
+          # Copy libbox.aar
+          LIBBOX_AAR=$(find libbox-artifacts -name "libbox.aar" -type f | head -1)
+          cp "$LIBBOX_AAR" app/libs/libbox.aar
+          echo "✓ Copied libbox.aar to app/libs/"
+          
+          # Copy libbox-legacy.aar if exists, otherwise symlink to libbox.aar
+          LIBBOX_LEGACY_AAR=$(find libbox-artifacts -name "libbox-legacy.aar" -type f | head -1)
+          if [ -n "$LIBBOX_LEGACY_AAR" ]; then
+            cp "$LIBBOX_LEGACY_AAR" app/libs/libbox-legacy.aar
+            echo "✓ Copied libbox-legacy.aar to app/libs/"
+          else
+            # Use same libbox.aar for legacy builds
+            cp app/libs/libbox.aar app/libs/libbox-legacy.aar
+            echo "✓ Using libbox.aar for legacy builds"
+          fi
+          
+          echo ""
+          echo "=== Final AAR files in app/libs/ ==="
+          ls -lh app/libs/*.aar
+      
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Setup Android NDK
+        run: |
+          echo "y" | ${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager --install "ndk;28.0.13004108"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/28.0.13004108" >> $GITHUB_ENV
+      
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+      
+      - name: Build APK - ${{ matrix.variant }}
+        run: |
+          echo "=== Building ${{ matrix.variant }} variant ==="
+          ./gradlew ${{ matrix.task }} --stacktrace --no-daemon
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+      
+      - name: List built APKs
+        run: |
+          echo "=== Built APKs for ${{ matrix.variant }} ==="
+          find ${{ matrix.output_path }} -name "*.apk" -type f -exec ls -lh {} \;
+      
+      - name: Prepare APKs for upload
+        run: |
+          mkdir -p dist
+          cp ${{ matrix.output_path }}/*.apk dist/
+          
+          # Read version info
+          VERSION_CODE=$(grep VERSION_CODE version.properties | cut -d= -f2)
+          VERSION_NAME=$(grep VERSION_NAME version.properties | cut -d= -f2)
+          
+          # Create metadata
+          cat > dist/version-metadata.json << EOF
+          {
+            "version_code": ${VERSION_CODE},
+            "version_name": "${VERSION_NAME}",
+            "variant": "${{ matrix.variant }}",
+            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          
+          echo "=== Build metadata ==="
+          cat dist/version-metadata.json
+          
+          echo ""
+          echo "=== APKs ready for upload ==="
+          ls -lh dist/*.apk
+      
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.variant }}
+          path: dist/*.apk
+          retention-days: 30
+      
+      - name: Upload build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: metadata-${{ matrix.variant }}
+          path: dist/version-metadata.json
+          retention-days: 30
+      
+      - name: Build summary
+        run: |
+          echo "=== Build Summary - ${{ matrix.variant }} ==="
+          echo "✓ libbox-merged artifact downloaded from shizukumiray-hue/sing-box-core-ref1nd"
+          echo "✓ AAR files copied to app/libs/"
+          echo "✓ APK built successfully"
+          echo ""
+          echo "Version: $(grep VERSION_NAME version.properties | cut -d= -f2)"
+          echo "Variant: ${{ matrix.variant }}"
+          echo ""
+          echo "Built APKs:"
+          ls -1 dist/*.apk | xargs -n1 basename
