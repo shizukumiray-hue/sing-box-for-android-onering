@@ -1,8 +1,9 @@
 package io.nekohasekai.sfa.utils
 
 import android.util.Log
-import io.nekohasekai.libbox.CommandClientHandler
-import io.nekohasekai.libbox.CommandClientOptions
+import io.nekohasekai.CommandClient
+import io.nekohasekai.CommandClientHandler
+import io.nekohasekai.CommandClientOptions
 import io.nekohasekai.libbox.ConnectionEvents
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LogEntry
@@ -91,11 +92,11 @@ open class CommandClient(
     private val access = Any()
     private var connectionEpoch = 0
     private var connecting = false
-    private var commandClient: libbox.CommandClient? = null
+    private var commandClient: CommandClient? = null
 
     fun connect() {
         val epoch: Int
-        val previousClient: libbox.CommandClient?
+        val previousClient: CommandClient?
         synchronized(access) {
             epoch = ++connectionEpoch
             previousClient = commandClient
@@ -122,7 +123,7 @@ open class CommandClient(
             options.addCommand(command)
         }
         options.statusInterval = 1 * 1000 * 1000 * 1000
-        val commandClient = libbox.CommandClient(ClientHandler(epoch), options)
+        val commandClient = CommandClient(ClientHandler(epoch), options)
         try {
             commandClient.connect()
         } catch (e: Exception) {
@@ -153,7 +154,7 @@ open class CommandClient(
 
     @OptIn(DelicateCoroutinesApi::class)
     fun disconnect() {
-        val client: libbox.CommandClient?
+        val client: CommandClient?
         val notifyDisconnected: Boolean
         synchronized(access) {
             connectionEpoch++
