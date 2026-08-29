@@ -30,7 +30,7 @@ jobs:
           name: libbox-merged
           path: libbox-download
           repo: shizukumiray-hue/sing-box-core-ref1nd
-          run_id: 33246766872
+          run_id: 33263946919
           allow_forks: true
         continue-on-error: true
       
