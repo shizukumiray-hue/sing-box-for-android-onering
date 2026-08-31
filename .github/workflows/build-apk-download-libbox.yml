@@ -205,10 +205,14 @@ jobs:
           APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
           echo "Using apksigner: $APKSIGNER"
           
-          KEYSTORE_PATH="app/release.keystore"
-          if [ -n "$KEYSTORE_FILE" ]; then
-            echo "$KEYSTORE_FILE" | base64 -d > app/release.keystore
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/app/release.keystore"
+          if [ ! -f "$KEYSTORE_PATH" ] && [ -n "$KEYSTORE_FILE" ]; then
+            echo "$KEYSTORE_FILE" | base64 -d > "$KEYSTORE_PATH" 2>/dev/null || true
           fi
+          
+          ALIAS_NAME="${ALIAS_NAME:-sing-box-onering}"
+          KEYSTORE_PASS="${KEYSTORE_PASS:-8JJR2x7QToMDMashiroDaisy}"
+          ALIAS_PASS="${ALIAS_PASS:-8JJR2x7QToMDMashiroDaisy}"
           
           if [ ! -f "$KEYSTORE_PATH" ]; then
             echo "❌ Keystore file not found at $KEYSTORE_PATH"
@@ -219,7 +223,7 @@ jobs:
           for apk in sing-box-*.apk; do
             echo "=== Signing $apk ==="
             $APKSIGNER sign \
-              --ks "../../../../../${KEYSTORE_PATH}" \
+              --ks "$KEYSTORE_PATH" \
               --ks-key-alias "$ALIAS_NAME" \
               --ks-pass "pass:$KEYSTORE_PASS" \
               --key-pass "pass:$ALIAS_PASS" \
