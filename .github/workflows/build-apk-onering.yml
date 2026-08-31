@@ -6,6 +6,7 @@ on:
       libbox_run_id:
         description: 'libbox workflow run ID (leave empty to download from latest artifact)'
         required: false
+        type: string
         default: ''
   push:
     branches: [ reF1nd-stable ]

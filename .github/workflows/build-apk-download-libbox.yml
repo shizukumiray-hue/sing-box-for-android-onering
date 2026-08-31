@@ -2,6 +2,12 @@ name: Build APK with OneRing (Download libbox.aar)
 
 on:
   workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: 'sing-box-core workflow run ID to download libbox artifact (empty = latest / fallback to default)'
+        required: false
+        type: string
+        default: '33246766872'
   push:
     branches: [ reF1nd-stable ]
     paths:
@@ -30,7 +36,7 @@ jobs:
           name: libbox-merged
           path: libbox-download
           repo: shizukumiray-hue/sing-box-core-ref1nd
-          run_id: 33263946919
+          run_id: ${{ inputs.core_run_id || '33263946919' }}
           allow_forks: true
         continue-on-error: true
       

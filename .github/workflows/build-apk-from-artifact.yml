@@ -2,6 +2,12 @@ name: Build APK from External Artifact
 
 on:
   workflow_dispatch:
+    inputs:
+      core_run_id:
+        description: 'sing-box-core workflow run ID or leave empty to use search_artifacts / latest'
+        required: false
+        type: string
+        default: ''
   push:
     branches: 
       - reF1nd-stable
