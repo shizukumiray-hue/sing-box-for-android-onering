@@ -7,6 +7,8 @@ jobs:
   build-apk-with-onering:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      GRADLE_OPTS: "-Djava.awt.headless=true"
     
     steps:
       # Step 1: Checkout Android repo
