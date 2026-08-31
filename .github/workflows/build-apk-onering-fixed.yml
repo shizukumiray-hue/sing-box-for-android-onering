@@ -145,67 +145,101 @@ jobs:
           echo "Built APKs:"
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
-      # Step 17: Sign APKs (if keystore available)
-      - name: Sign APKs (if keystore available)
-        working-directory: android-repo
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
-          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
-          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
-          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
-        run: |
-          if [ -n "$KEYSTORE_FILE" ]; then
-            echo "Signing APKs with provided keystore..."
-            
-            # Decode keystore from base64
-            echo "$KEYSTORE_FILE" | base64 -d > release.keystore
-            
-            # Sign each APK
-            for apk in app/build/outputs/apk/other/release/*.apk; do
-              echo "Signing: $apk"
-              
-              # Sign with jarsigner
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA-256 \
-                -keystore release.keystore \
-                -storepass "$KEYSTORE_PASS" \
-                -keypass "$ALIAS_PASS" \
-                "$apk" "$ALIAS_NAME"
-              
-              # Verify signature
-              jarsigner -verify -verbose "$apk"
-              
-              # Zipalign
-              ${ANDROID_HOME}/build-tools/34.0.0/zipalign -v -f 4 "$apk" "${apk%.apk}-aligned.apk"
-              mv "${apk%.apk}-aligned.apk" "$apk"
-            done
-            
-            # Clean up keystore
-            rm -f release.keystore
-            echo "✓ APKs signed successfully"
-          else
-            echo "No keystore provided, skipping signing (debug mode)"
-          fi
-      
-      # Step 18: Rename APKs
-      - name: Rename APKs
+      # Step 17: Prepare APK filenames
+      - name: Prepare APK filenames
         working-directory: android-repo
         run: |
           cd app/build/outputs/apk/other/release
-          for apk in *.apk; do
-            # Add "onering" suffix to filename
-            newname=$(echo "$apk" | sed 's/\.apk$/-onering.apk/')
-            mv "$apk" "$newname"
-            echo "Renamed: $apk -> $newname"
+          for f in *.apk; do
+            if [[ "$f" == *"arm64-v8a"* ]]; then
+              cp "$f" sing-box-arm64-v8a.apk
+            elif [[ "$f" == *"armeabi-v7a"* ]]; then
+              cp "$f" sing-box-armeabi-v7a.apk
+            elif [[ "$f" == *"x86_64"* ]]; then
+              cp "$f" sing-box-x86_64.apk
+            elif [[ "$f" == *"x86"* ]]; then
+              cp "$f" sing-box-x86.apk
+            elif [[ "$f" == *"universal"* ]]; then
+              cp "$f" sing-box-universal.apk
+            fi
           done
-          ls -lh
+          echo "Prepared APKs:"
+          ls -lh sing-box-*.apk
       
-      # Step 19: Upload APK artifacts
-      - name: Upload APK artifacts
+      # Step 18: Sign APKs with apksigner
+      - name: Sign APKs
+        working-directory: android-repo
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME || 'sing-box-onering' }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          echo "Using apksigner: $APKSIGNER"
+          
+          KEYSTORE_PATH="app/release.keystore"
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "$KEYSTORE_FILE" | base64 -d > app/release.keystore
+          fi
+          
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "❌ Keystore file not found at $KEYSTORE_PATH"
+            exit 1
+          fi
+          
+          cd app/build/outputs/apk/other/release
+          for apk in sing-box-*.apk; do
+            echo "=== Signing $apk ==="
+            $APKSIGNER sign \
+              --ks "../../../../../${KEYSTORE_PATH}" \
+              --ks-key-alias "$ALIAS_NAME" \
+              --ks-pass "pass:$KEYSTORE_PASS" \
+              --key-pass "pass:$ALIAS_PASS" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              "$apk"
+            
+            echo "=== Verifying signature for $apk ==="
+            $APKSIGNER verify --verbose "$apk"
+          done
+          echo "✓ All APKs signed and verified successfully"
+      
+      # Step 19: Upload individual APK artifacts (separated per architecture)
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: sing-box-apk-onering
-          path: |
-            android-repo/app/build/outputs/apk/other/release/*-onering.apk
+          name: sing-box-arm64-v8a
+          path: android-repo/app/build/outputs/apk/other/release/sing-box-arm64-v8a.apk
+          retention-days: 30
+      
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-armeabi-v7a
+          path: android-repo/app/build/outputs/apk/other/release/sing-box-armeabi-v7a.apk
+          retention-days: 30
+      
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-x86_64
+          path: android-repo/app/build/outputs/apk/other/release/sing-box-x86_64.apk
+          retention-days: 30
+      
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-x86
+          path: android-repo/app/build/outputs/apk/other/release/sing-box-x86.apk
+          retention-days: 30
+      
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-universal
+          path: android-repo/app/build/outputs/apk/other/release/sing-box-universal.apk
           retention-days: 30
       
       # Step 20: Upload libbox.aar for reference
@@ -221,7 +255,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: android-repo/app/build/outputs/apk/other/release/*-onering.apk
+          files: android-repo/app/build/outputs/apk/other/release/sing-box-*.apk
           tag_name: ${{ github.ref_name }}
           body: |
             ## sing-box Android APK with OneRing Support
@@ -237,33 +271,8 @@ jobs:
             - ✅ All critical bugs fixed (5 fixes applied)
             
             ### APK Variants
-            - `arm64-v8a-onering.apk` - Modern 64-bit ARM devices (recommended)
-            - `armeabi-v7a-onering.apk` - 32-bit ARM devices
-            - `x86_64-onering.apk` - 64-bit x86 emulators/tablets
-            - `x86-onering.apk` - 32-bit x86 devices
-            - `universal-onering.apk` - All architectures (larger file)
-            
-            ### How to Use OneRing
-            
-            In your outbound configuration, set TLS server_name with format:
-            ```
-            real.domain.com|bug.domain.com
-            ```
-            
-            Example VLESS + WebSocket:
-            ```json
-            {
-              "type": "vless",
-              "server": "1.2.3.4",
-              "server_port": 443,
-              "uuid": "your-uuid-here",
-              "tls": {
-                "enabled": true,
-                "server_name": "real.cloudflare.com|bug.telkomsel.com"
-              },
-              "transport": {
-                "type": "ws",
-                "path": "/websocket"
-              }
-            }
-            ```
+            - `sing-box-arm64-v8a.apk` - Modern 64-bit ARM devices (recommended)
+            - `sing-box-armeabi-v7a.apk` - 32-bit ARM devices
+            - `sing-box-x86_64.apk` - 64-bit x86 emulators/tablets
+            - `sing-box-x86.apk` - 32-bit x86 devices
+            - `sing-box-universal.apk` - All architectures

@@ -169,30 +169,105 @@ jobs:
       # Step 13: List built APKs
       - name: List built APKs
         run: |
-          echo "Built APKs (unsigned - sign manually later):"
+          echo "Built APKs:"
           find app/build/outputs/apk -name "*.apk" -type f -exec ls -lh {} \;
       
-      # Step 14: Rename APKs
-      - name: Rename APKs
+      # Step 14: Prepare and Standardize APK filenames
+      - name: Prepare APK filenames
         run: |
           cd app/build/outputs/apk/other/release
-          for apk in *.apk; do
-            newname=$(echo "$apk" | sed 's/\.apk$/-onering.apk/')
-            mv "$apk" "$newname"
-            echo "Renamed: $apk -> $newname"
+          for f in *.apk; do
+            if [[ "$f" == *"arm64-v8a"* ]]; then
+              cp "$f" sing-box-arm64-v8a.apk
+            elif [[ "$f" == *"armeabi-v7a"* ]]; then
+              cp "$f" sing-box-armeabi-v7a.apk
+            elif [[ "$f" == *"x86_64"* ]]; then
+              cp "$f" sing-box-x86_64.apk
+            elif [[ "$f" == *"x86"* ]]; then
+              cp "$f" sing-box-x86.apk
+            elif [[ "$f" == *"universal"* ]]; then
+              cp "$f" sing-box-universal.apk
+            fi
           done
-          ls -lh
+          echo "Prepared APKs:"
+          ls -lh sing-box-*.apk
       
-      # Step 15: Upload APK artifacts
-      - name: Upload APK artifacts
+      # Step 15: Sign APKs with apksigner
+      - name: Sign APKs
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME || 'sing-box-onering' }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          echo "Using apksigner: $APKSIGNER"
+          
+          KEYSTORE_PATH="app/release.keystore"
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "$KEYSTORE_FILE" | base64 -d > app/release.keystore
+          fi
+          
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "❌ Keystore file not found at $KEYSTORE_PATH"
+            exit 1
+          fi
+          
+          cd app/build/outputs/apk/other/release
+          for apk in sing-box-*.apk; do
+            echo "=== Signing $apk ==="
+            $APKSIGNER sign \
+              --ks "../../../../../${KEYSTORE_PATH}" \
+              --ks-key-alias "$ALIAS_NAME" \
+              --ks-pass "pass:$KEYSTORE_PASS" \
+              --key-pass "pass:$ALIAS_PASS" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              "$apk"
+            
+            echo "=== Verifying signature for $apk ==="
+            $APKSIGNER verify --verbose "$apk"
+          done
+          echo "✓ All APKs signed and verified successfully"
+      
+      # Step 16: Upload individual APK artifacts (separated per architecture)
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: sing-box-apk-onering
-          path: |
-            app/build/outputs/apk/other/release/*-onering.apk
+          name: sing-box-arm64-v8a
+          path: app/build/outputs/apk/other/release/sing-box-arm64-v8a.apk
           retention-days: 30
       
-      # Step 16: Upload libbox.aar for reference
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-armeabi-v7a
+          path: app/build/outputs/apk/other/release/sing-box-armeabi-v7a.apk
+          retention-days: 30
+      
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-x86_64
+          path: app/build/outputs/apk/other/release/sing-box-x86_64.apk
+          retention-days: 30
+      
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-x86
+          path: app/build/outputs/apk/other/release/sing-box-x86.apk
+          retention-days: 30
+      
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-universal
+          path: app/build/outputs/apk/other/release/sing-box-universal.apk
+          retention-days: 30
+      
+      # Step 17: Upload libbox.aar for reference
       - name: Upload libbox.aar artifact
         uses: actions/upload-artifact@v4
         with:
@@ -200,12 +275,12 @@ jobs:
           path: app/libs/libbox.aar
           retention-days: 7
       
-      # Step 17: Build Summary
+      # Step 18: Build Summary
       - name: Build Summary
         run: |
           echo "=== Build Summary ==="
           echo "✓ libbox.aar downloaded from artifacts"
-          echo "✓ APK built successfully"
+          echo "✓ APK built and signed successfully"
           echo ""
-          echo "Built APKs:"
-          ls -lh app/build/outputs/apk/other/release/*-onering.apk
+          echo "Signed APKs:"
+          ls -lh app/build/outputs/apk/other/release/sing-box-*.apk

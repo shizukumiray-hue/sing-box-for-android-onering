@@ -150,44 +150,102 @@ jobs:
           echo "=== Built APKs for ${{ matrix.variant }} ==="
           find ${{ matrix.output_path }} -name "*.apk" -type f -exec ls -lh {} \;
       
-      - name: Prepare APKs for upload
+      - name: Prepare and Standardize APK filenames
         run: |
-          mkdir -p dist
-          cp ${{ matrix.output_path }}/*.apk dist/
-          
-          # Read version info
-          VERSION_CODE=$(grep VERSION_CODE version.properties | cut -d= -f2)
-          VERSION_NAME=$(grep VERSION_NAME version.properties | cut -d= -f2)
-          
-          # Create metadata
-          cat > dist/version-metadata.json << EOF
-          {
-            "version_code": ${VERSION_CODE},
-            "version_name": "${VERSION_NAME}",
-            "variant": "${{ matrix.variant }}",
-            "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          }
-          EOF
-          
-          echo "=== Build metadata ==="
-          cat dist/version-metadata.json
-          
-          echo ""
-          echo "=== APKs ready for upload ==="
-          ls -lh dist/*.apk
+          cd ${{ matrix.output_path }}
+          for f in *.apk; do
+            prefix="sing-box"
+            if [ "${{ matrix.variant }}" = "otherLegacy" ]; then
+              prefix="sing-box-legacy"
+            fi
+            
+            if [[ "$f" == *"arm64-v8a"* ]]; then
+              cp "$f" "${prefix}-arm64-v8a.apk"
+            elif [[ "$f" == *"armeabi-v7a"* ]]; then
+              cp "$f" "${prefix}-armeabi-v7a.apk"
+            elif [[ "$f" == *"x86_64"* ]]; then
+              cp "$f" "${prefix}-x86_64.apk"
+            elif [[ "$f" == *"x86"* ]]; then
+              cp "$f" "${prefix}-x86.apk"
+            elif [[ "$f" == *"universal"* ]]; then
+              cp "$f" "${prefix}-universal.apk"
+            fi
+          done
+          echo "Prepared APKs:"
+          ls -lh sing-box-*.apk
       
-      - name: Upload APK artifacts
+      - name: Sign APKs
+        env:
+          KEYSTORE_FILE: ${{ secrets.KEYSTORE_FILE }}
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME || 'sing-box-onering' }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS || '8JJR2x7QToMDMashiroDaisy' }}
+        run: |
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name apksigner | sort -V | tail -n 1)
+          echo "Using apksigner: $APKSIGNER"
+          
+          KEYSTORE_PATH="app/release.keystore"
+          if [ -n "$KEYSTORE_FILE" ]; then
+            echo "$KEYSTORE_FILE" | base64 -d > app/release.keystore
+          fi
+          
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            echo "❌ Keystore file not found at $KEYSTORE_PATH"
+            exit 1
+          fi
+          
+          cd ${{ matrix.output_path }}
+          for apk in sing-box-*.apk; do
+            echo "=== Signing $apk ==="
+            $APKSIGNER sign \
+              --ks "../../../../../${KEYSTORE_PATH}" \
+              --ks-key-alias "$ALIAS_NAME" \
+              --ks-pass "pass:$KEYSTORE_PASS" \
+              --key-pass "pass:$ALIAS_PASS" \
+              --v1-signing-enabled true \
+              --v2-signing-enabled true \
+              --v3-signing-enabled true \
+              "$apk"
+            
+            echo "=== Verifying signature for $apk ==="
+            $APKSIGNER verify --verbose "$apk"
+          done
+          echo "✓ All APKs signed and verified successfully"
+      
+      # Upload individual APK artifacts per ABI
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ matrix.variant }}
-          path: dist/*.apk
+          name: ${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-arm64-v8a' || 'sing-box-arm64-v8a' }}
+          path: ${{ matrix.output_path }}/${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-arm64-v8a.apk' || 'sing-box-arm64-v8a.apk' }}
           retention-days: 30
       
-      - name: Upload build metadata
+      - name: Upload armeabi-v7a APK
         uses: actions/upload-artifact@v4
         with:
-          name: metadata-${{ matrix.variant }}
-          path: dist/version-metadata.json
+          name: ${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-armeabi-v7a' || 'sing-box-armeabi-v7a' }}
+          path: ${{ matrix.output_path }}/${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-armeabi-v7a.apk' || 'sing-box-armeabi-v7a.apk' }}
+          retention-days: 30
+      
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-x86_64' || 'sing-box-x86_64' }}
+          path: ${{ matrix.output_path }}/${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-x86_64.apk' || 'sing-box-x86_64.apk' }}
+          retention-days: 30
+      
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-x86' || 'sing-box-x86' }}
+          path: ${{ matrix.output_path }}/${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-x86.apk' || 'sing-box-x86.apk' }}
+          retention-days: 30
+      
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-universal' || 'sing-box-universal' }}
+          path: ${{ matrix.output_path }}/${{ matrix.variant == 'otherLegacy' && 'sing-box-legacy-universal.apk' || 'sing-box-universal.apk' }}
           retention-days: 30
       
       - name: Build summary
@@ -195,10 +253,10 @@ jobs:
           echo "=== Build Summary - ${{ matrix.variant }} ==="
           echo "✓ libbox-merged artifact downloaded from shizukumiray-hue/sing-box-core-ref1nd"
           echo "✓ AAR files copied to app/libs/"
-          echo "✓ APK built successfully"
+          echo "✓ APK built and signed successfully"
           echo ""
           echo "Version: $(grep VERSION_NAME version.properties | cut -d= -f2)"
           echo "Variant: ${{ matrix.variant }}"
           echo ""
-          echo "Built APKs:"
-          ls -1 dist/*.apk | xargs -n1 basename
+          echo "Signed APKs:"
+          ls -1 ${{ matrix.output_path }}/sing-box-*.apk | xargs -n1 basename
