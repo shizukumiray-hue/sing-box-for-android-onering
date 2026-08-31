@@ -8,14 +8,6 @@ on:
         required: false
         type: string
         default: ''
-  push:
-    branches: 
-      - reF1nd-stable
-    paths:
-      - 'app/**'
-      - 'build.gradle.kts'
-      - 'version.properties'
-      - '.github/workflows/build-apk-from-artifact.yml'
 
 jobs:
   build-apk:

@@ -8,13 +8,6 @@ on:
         required: false
         type: string
         default: '33246766872'
-  push:
-    branches: [ reF1nd-stable ]
-    paths:
-      - 'app/**'
-      - 'build.gradle.kts'
-      - 'version.properties'
-      - '.github/workflows/build-apk-download-libbox.yml'
 
 jobs:
   build-apk-with-onering:
